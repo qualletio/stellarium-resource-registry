@@ -1,0 +1,97 @@
+# The whole stack: docker compose up -d --build
+#   web     http://localhost:3000
+#   api     http://localhost:4000/v1
+#   nodes   http://localhost:3100 (source) and http://localhost:3101 (peer)
+# For development outside Docker, start only Postgres: docker compose up -d postgres
+
+x-healthcheck: &healthcheck
+  interval: 2s
+  timeout: 5s
+  retries: 30
+  start_period: 10s
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: registry
+      POSTGRES_PASSWORD: local-only-password
+      POSTGRES_DB: registry
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "pg_isready -U registry -d registry"]
+
+  local-peer-node:
+    build:
+      context: .
+      target: local-peer-node
+    environment:
+      BASE_URL: http://local-peer-node:3101
+    ports:
+      - "127.0.0.1:3101:3101"
+    init: true
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "node", "/app/docker/healthcheck.mjs", "3101", "/v1/"]
+
+  local-source-node:
+    build:
+      context: .
+      target: local-source-node
+    environment:
+      BASE_URL: http://local-source-node:3100
+      STARTING_PEER: http://local-peer-node:3101
+    ports:
+      - "127.0.0.1:3100:3100"
+    depends_on:
+      local-peer-node:
+        condition: service_healthy
+    init: true
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "node", "/app/docker/healthcheck.mjs", "3100", "/v1/"]
+
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      DATABASE_URL: postgresql://registry:local-only-password@postgres:5432/registry
+      SYNC_NODE_URL: http://local-source-node:3100
+      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-60000}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-local-admin-key}
+      WEB_ORIGIN: http://localhost:3000
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      local-source-node:
+        condition: service_healthy
+    init: true
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "node", "/app/docker/healthcheck.mjs", "4000", "/v1/health"]
+
+  web:
+    build:
+      context: .
+      target: web
+    environment:
+      API_URL: http://api:4000
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    init: true
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "node", "/app/docker/healthcheck.mjs", "3000", "/"]
+
+volumes:
+  postgres-data:

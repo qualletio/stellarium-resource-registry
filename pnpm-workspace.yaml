@@ -1,0 +1,17 @@
+packages:
+  - apps/*
+  - packages/*
+
+allowBuilds:
+  esbuild: true
+  sharp: true
+  sqlite3: true
+  unrs-resolver: false
+
+minimumReleaseAgeExclude:
+  - stellarium-ts@0.13.0
+
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - sqlite3

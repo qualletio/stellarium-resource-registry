@@ -1,0 +1,27 @@
+{
+  "name": "@registry/node-fixtures",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Starts real stellarium-ts nodes with sample resources, for the local node apps and the API's tests.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc",
+    "lint": "biome lint src",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fastify": "^5.12.7",
+    "stellarium-ts": "0.13.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

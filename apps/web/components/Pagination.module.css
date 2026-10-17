@@ -1,0 +1,14 @@
+.nav {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 20px;
+}
+
+.page {
+  color: var(--muted);
+}
+
+.disabled {
+  color: var(--border);
+}

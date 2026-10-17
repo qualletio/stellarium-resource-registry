@@ -1,0 +1,200 @@
+.card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 14px 16px;
+  scroll-margin-top: 16px;
+}
+
+.card:target {
+  border-color: var(--accent);
+  box-shadow: var(--glow);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.signature {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.anchor {
+  color: var(--muted);
+  margin-right: 8px;
+}
+
+.fnName {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.punct {
+  color: var(--muted);
+}
+
+.param {
+  color: var(--fg-strong);
+}
+
+.type {
+  color: var(--cyan);
+}
+
+.badges {
+  display: flex;
+  gap: 6px;
+}
+
+.badgeFree,
+.badgePaid,
+.badgeOpen,
+.badgeRestricted {
+  font-size: 12px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+}
+
+.badgeFree,
+.badgeOpen {
+  color: var(--muted);
+}
+
+.badgePaid {
+  color: var(--amber);
+  background: var(--amber-dim);
+}
+
+.badgeRestricted {
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: 10ch 1fr;
+  gap: 4px 12px;
+  margin: 12px 0 0;
+}
+
+.fields dt {
+  color: var(--muted);
+}
+
+.fields dt::after {
+  content: ":";
+}
+
+.fields dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.copyRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+}
+
+.address,
+.url {
+  color: var(--fg-strong);
+  overflow-wrap: anywhere;
+}
+
+.amber {
+  color: var(--amber);
+}
+
+.ok {
+  color: var(--accent);
+}
+
+.danger {
+  color: var(--danger);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.details {
+  margin-top: 12px;
+}
+
+.details summary {
+  cursor: pointer;
+  color: var(--muted);
+  list-style: none;
+}
+
+.details summary::-webkit-details-marker {
+  display: none;
+}
+
+.details summary::before {
+  content: "[+] ";
+}
+
+.details[open] summary::before {
+  content: "[-] ";
+}
+
+.details summary:hover {
+  color: var(--accent);
+}
+
+.summaryLabel {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.block {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.blockHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.code {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  color: var(--fg-strong);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 10px 0 0;
+}
+
+@media (max-width: 560px) {
+  .fields {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .fields dd {
+    margin-bottom: 6px;
+  }
+}

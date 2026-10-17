@@ -1,0 +1,28 @@
+.shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 16px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main {
+  flex: 1;
+  padding: 24px 0 48px;
+  min-width: 0;
+}
+
+.footer {
+  border-top: 1px dashed var(--border);
+  padding: 16px 0 24px;
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sep {
+  opacity: 0.5;
+}

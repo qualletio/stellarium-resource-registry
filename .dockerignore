@@ -1,0 +1,18 @@
+.git
+.turbo
+**/.turbo
+node_modules
+**/node_modules
+dist
+**/dist
+.next
+**/.next
+**/*.tsbuildinfo
+# Local env files hold secrets and host-only addresses; compose sets the environment instead.
+.env
+**/.env
+**/.env.local
+coverage
+**/*.log
+*.db
+.DS_Store

@@ -1,0 +1,45 @@
+.header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  padding: 16px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.brand {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.brand:hover {
+  text-decoration: none;
+}
+
+.user {
+  color: var(--accent);
+  text-shadow: var(--glow);
+}
+
+.at,
+.colon {
+  color: var(--muted);
+}
+
+.host {
+  color: var(--cyan);
+}
+
+.nav {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+}
+
+.link {
+  color: var(--fg);
+}
+
+.link:hover {
+  color: var(--accent);
+}

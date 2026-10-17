@@ -1,0 +1,7 @@
+.banner {
+  display: block;
+  width: min(100%, 560px);
+  height: auto;
+  fill: var(--accent);
+  filter: drop-shadow(0 0 6px var(--accent-dim));
+}
