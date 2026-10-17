@@ -29,6 +29,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <footer className={styles.footer}>
             <span>stellarium-registry</span>
             <span className={styles.sep}>│</span>
+            <a href="https://stellarium.sh" target="_blank" rel="noreferrer">stellarium.sh</a>
+            <span className={styles.sep}>│</span>
             <a href="https://docs.stellarium.sh" target="_blank" rel="noreferrer">docs.stellarium.sh</a>
           </footer>
         </div>
