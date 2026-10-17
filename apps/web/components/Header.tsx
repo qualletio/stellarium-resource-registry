@@ -4,7 +4,6 @@ import { ThemeToggle } from './ThemeToggle';
 
 const NAV = [
   { href: '/search', label: 'search' },
-  { href: '/nodes', label: 'nodes' },
 ];
 
 export function Header() {

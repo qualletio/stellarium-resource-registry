@@ -1,5 +1,5 @@
 import 'server-only';
-import type { NodeSummary, Page, ResourceDetail, ResourceSummary, SearchQuery, Stats, SyncRun } from '@registry/types';
+import type { Page, ResourceDetail, ResourceSummary, SearchQuery, Stats } from '@registry/types';
 
 const API_URL = (process.env.API_URL ?? 'http://127.0.0.1:4000').replace(/\/+$/, '');
 
@@ -45,7 +45,3 @@ export async function getResource(fqn: string): Promise<ResourceDetail | undefin
     throw error;
   }
 }
-
-export const getNodes = async () => (await get<{ items: NodeSummary[] }>('/nodes')).items;
-
-export const getSyncRuns = async (limit = 10) => (await get<{ items: SyncRun[] }>(`/sync/runs?limit=${limit}`)).items;

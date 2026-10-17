@@ -45,7 +45,7 @@ Each run reads the source node's public routes, `GET /v1/self`, `/v1/resources` 
 - Resources are keyed by fully qualified name (`path.Name`). Functions, parameters and payment manifests are rewritten only when they change.
 - A resource the node stops listing gets `removed_at` set rather than being deleted. It disappears from search, and its page shows a warning. Nodes the source stops listing are dropped once they host no live resources.
 - **Grant probe.** Who holds a grant is private to the nodes involved, so the registry can only learn whether a host issues grants on request. For each host with a restricted function, it calls one restricted function without authorization (at most once per `GRANT_PROBE_INTERVAL_MS`). The node refuses with 403 before running anything, and includes a `grantEndpoint` if it accepts requests. Open functions are never probed, since calling one would run it.
-- Every run is logged in `sync_runs` (the last 1,000 are kept) and shown on `/nodes`.
+- Every run is logged in `sync_runs` (the last 1,000 are kept) and listed by `GET /v1/sync/runs`.
 
 ## API
 
