@@ -8,8 +8,12 @@ export function Banner({ lines, label }: { lines: string[]; label: string }) {
   // One path of small squares, inset so neighbouring cells read as separate pixels.
   const d = rows.flatMap((row, y) => row.flatMap((filled, x) => (filled ? [`M${x + 0.06} ${y + 0.06}h.88v.88h-.88z`] : []))).join('');
   return (
-    <svg className={styles.banner} viewBox={`0 0 ${width} ${rows.length}`} role="img" aria-label={label}>
-      <path d={d} />
-    </svg>
+    <>
+      <svg className={styles.banner} viewBox={`0 0 ${width} ${rows.length}`} aria-hidden="true">
+        <path d={d} />
+      </svg>
+      {/* Real text, so crawlers (which may skip an SVG's aria-label) and screen readers both get the heading. */}
+      <span className={styles.label}>{label}</span>
+    </>
   );
 }

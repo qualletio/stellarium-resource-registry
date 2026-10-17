@@ -36,6 +36,8 @@ pnpm dev        # web :3000, api :4000, source node :3100, peer node :3101
 
 The source node waits for the peer, then bootstraps from it, so syncing :3100 shows both nodes' resources. The API migrates the database and syncs as soon as it starts, then every `SYNC_INTERVAL_MS`. Its first sync can run before the nodes are up; trigger one with `POST /v1/sync` or wait for the next.
 
+In production, set the web app's `SITE_URL` to its public origin (for example `https://registry.stellarium.sh`). It builds the canonical links, `/sitemap.xml` and `/robots.txt`. On Railway it falls back to the service's public domain.
+
 To sync a real network instead, set `SYNC_NODE_URL` to any stellarium-ts node. For example, the stellarium-ts repo's `docker compose` runs one on `http://127.0.0.1:3002`.
 
 ## How syncing works

@@ -5,9 +5,9 @@ import { ResourceList } from '@/components/ResourceList';
 import { SearchPrompt } from '@/components/SearchPrompt';
 import terminal from '@/components/Terminal.module.css';
 import { searchResources } from '@/lib/api';
+import { pageMetadata } from '@/lib/site';
 import styles from './page.module.css';
 
-export const metadata: Metadata = { title: 'search' };
 
 const PAGE_SIZE = 25;
 
@@ -34,6 +34,15 @@ function commandFor(query: ReturnType<typeof parseQuery>): string {
   if (query.paid) parts.push('--paid');
   if (query.restricted) parts.push('--restricted');
   return parts.join(' ');
+}
+
+/** Result pages are kept out of the index (there's one per query), but their links are still followed. */
+export async function generateMetadata({ searchParams }: { searchParams: Promise<Params> }): Promise<Metadata> {
+  const filtered = Object.keys(await searchParams).length > 0;
+  return {
+    ...pageMetadata({ title: 'search', description: 'Search Stellarium resources by path, name or function, and filter by price and access.', path: '/search' }),
+    ...(filtered && { robots: { index: false, follow: true } }),
+  };
 }
 
 export default async function SearchPage({ searchParams }: { searchParams: Promise<Params> }) {

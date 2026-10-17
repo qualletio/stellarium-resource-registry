@@ -5,3 +5,12 @@
   fill: var(--accent);
   filter: drop-shadow(0 0 6px var(--accent-dim));
 }
+
+.label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

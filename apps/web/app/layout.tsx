@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { JetBrains_Mono } from 'next/font/google';
 import { Header } from '@/components/Header';
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/site';
 import { THEME_STORAGE_KEY } from '@/lib/theme';
 import './globals.css';
 import styles from './layout.module.css';
@@ -8,8 +9,10 @@ import styles from './layout.module.css';
 const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono', display: 'swap' });
 
 export const metadata: Metadata = {
-  title: { default: 'Stellarium Registry', template: '%s · Stellarium Registry' },
-  description: 'Find and browse the resources on the Stellarium network: functions, pricing and access.',
+  metadataBase: new URL(SITE_URL),
+  title: { default: SITE_NAME, template: `%s · ${SITE_NAME}` },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
 };
 
 // Runs before first paint, so a saved or system theme never flashes the other one.

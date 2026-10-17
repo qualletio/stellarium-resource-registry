@@ -83,6 +83,7 @@ services:
       target: web
     environment:
       API_URL: http://api:4000
+      SITE_URL: http://localhost:3000
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:

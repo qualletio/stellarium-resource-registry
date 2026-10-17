@@ -1,3 +1,4 @@
+import type { ResourceDetail } from '@registry/types';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -6,6 +7,7 @@ import { FunctionCard } from '@/components/FunctionCard';
 import terminal from '@/components/Terminal.module.css';
 import { getResource } from '@/lib/api';
 import { formatDate, formatLamports, timeAgo } from '@/lib/format';
+import { pageMetadata } from '@/lib/site';
 import styles from './page.module.css';
 
 type Props = { params: Promise<{ fqn: string }> };
@@ -19,8 +21,30 @@ async function fqnFrom(params: Props['params']): Promise<string> {
   }
 }
 
+/** One line for search results: how many functions, what they cost, and who may call them. */
+function describe(resource: ResourceDetail): string {
+  const costs = resource.functions.flatMap((fn) => (fn.paymentManifest ? [fn.paymentManifest.costLamports] : []));
+  const restricted = resource.functions.filter((fn) => fn.restricted).length;
+  const count = `${resource.functions.length} function${resource.functions.length === 1 ? '' : 's'}`;
+  const price =
+    costs.length === 0
+      ? 'all free'
+      : `${costs.length} paid, from ${formatLamports(Math.min(...costs))} per call`;
+  const access = restricted === 0 ? 'all open to any caller' : `${restricted} restricted to grant holders`;
+  const names = resource.functions.slice(0, 5).map((fn) => `${fn.name}()`);
+  const more = resource.functions.length > names.length ? ', …' : '';
+  return `${resource.fqn} is a Stellarium resource with ${count}: ${price}; ${access}.${names.length ? ` Functions: ${names.join(', ')}${more}.` : ''}`;
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  return { title: await fqnFrom(params) };
+  const fqn = await fqnFrom(params);
+  const resource = await getResource(fqn);
+  if (!resource) return { title: fqn };
+  return {
+    ...pageMetadata({ title: resource.fqn, description: describe(resource), path: `/resources/${encodeURIComponent(resource.fqn)}` }),
+    // The source node no longer lists it, so search engines should drop it too.
+    ...(resource.removedAt && { robots: { index: false, follow: true } }),
+  };
 }
 
 export default async function ResourcePage({ params }: Props) {
