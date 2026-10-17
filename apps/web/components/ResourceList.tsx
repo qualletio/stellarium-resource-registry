@@ -1,6 +1,7 @@
 import type { ResourceSummary } from '@registry/types';
 import Link from 'next/link';
 import { formatLamports, timeAgo } from '@/lib/format';
+import { AccessIcon } from './AccessIcon';
 import { Highlight } from './Highlight';
 import styles from './ResourceList.module.css';
 
@@ -11,14 +12,18 @@ function priceLabel(resource: ResourceSummary): string {
   return resource.paidFunctionCount < resource.functionCount ? `free / ${range}` : range;
 }
 
-/** Results laid out like `ls -l`: access, function count, price, name. */
+/** Results laid out like `ls -l`: access icon, function count, price, name. */
 export function ResourceList({ resources, query }: { resources: ResourceSummary[]; query?: string }) {
   return (
     <ul className={styles.list}>
       {resources.map((resource) => (
         <li key={resource.fqn} className={styles.row}>
-          <span className={styles.mode} title={resource.restrictedFunctionCount > 0 ? `${resource.restrictedFunctionCount} restricted function(s)` : 'all functions open'}>
-            {resource.restrictedFunctionCount > 0 ? 'r-x---' : 'r-xr-x'}
+          <span
+            className={resource.restrictedFunctionCount > 0 ? styles.restricted : styles.open}
+            title={resource.restrictedFunctionCount > 0 ? `${resource.restrictedFunctionCount} restricted function(s)` : 'all functions open'}
+          >
+            <AccessIcon restricted={resource.restrictedFunctionCount > 0} />
+            <span className={styles.srOnly}>{resource.restrictedFunctionCount > 0 ? 'restricted' : 'open'}</span>
           </span>
           <span className={styles.count} title="functions">
             {String(resource.functionCount).padStart(2, ' ')} fn

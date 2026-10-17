@@ -14,14 +14,10 @@ function GrantStatus({ host }: { host: NodeInfo | null }) {
   if (!host || host.acceptsGrantRequests === null) {
     return <span className={styles.muted}>unknown: the host hasn&apos;t been probed yet</span>;
   }
-  if (!host.acceptsGrantRequests || !host.grantEndpoint) {
+  if (!host.acceptsGrantRequests) {
     return <span className={styles.danger}>closed: the host issues grants out of band only</span>;
   }
-  return (
-    <span className={styles.ok}>
-      open: <code className={styles.url}>POST {host.grantEndpoint}</code>
-    </span>
-  );
+  return <span className={styles.ok}>open: the host issues grants on request</span>;
 }
 
 export function FunctionCard({ path, name, fn, host }: Props) {

@@ -7,7 +7,7 @@
 
 .row {
   display: grid;
-  grid-template-columns: 7ch 6ch minmax(14ch, 30ch) 1fr auto;
+  grid-template-columns: 2ch 6ch minmax(14ch, 30ch) 1fr auto;
   gap: 16px;
   align-items: baseline;
   padding: 8px 4px;
@@ -18,7 +18,30 @@
   background: var(--surface);
 }
 
-.mode,
+.open,
+.restricted {
+  display: inline-flex;
+  align-self: center;
+  font-size: 16px;
+}
+
+.open {
+  color: var(--accent);
+}
+
+.restricted {
+  color: var(--danger);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .count,
 .seen {
   color: var(--muted);

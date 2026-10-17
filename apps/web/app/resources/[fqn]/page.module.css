@@ -48,18 +48,6 @@
   overflow-wrap: anywhere;
 }
 
-.meta code {
-  color: var(--fg-strong);
-}
-
-.tag {
-  margin-left: 8px;
-  font-size: 12px;
-  padding: 0 6px;
-  border: 1px solid var(--cyan);
-  color: var(--cyan);
-}
-
 .functions {
   display: flex;
   flex-direction: column;

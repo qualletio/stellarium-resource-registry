@@ -36,7 +36,7 @@ export default async function HomePage() {
         {recent.items.length > 0 ? (
           <ResourceList resources={recent.items} />
         ) : (
-          <p className={terminal.muted}>No resources yet. The registry fills in after its first sync with {stats.sourceUrl}.</p>
+          <p className={terminal.muted}>No resources yet. The registry fills in after its first sync.</p>
         )}
         {recent.nextOffset !== null && (
           <p className={styles.more}>

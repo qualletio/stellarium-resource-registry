@@ -50,12 +50,6 @@ export default async function ResourcePage({ params }: Props) {
       </header>
 
       <dl className={styles.meta}>
-        <dt>host</dt>
-        <dd>
-          <code>{resource.baseUrl}</code>
-          {resource.host?.name && resource.host.name !== resource.baseUrl && <span className={styles.muted}> ({resource.host.name})</span>}
-          {resource.host?.isSource && <span className={styles.tag}>source</span>}
-        </dd>
         <dt>functions</dt>
         <dd>
           {resource.functions.length} total · <span className={styles.amber}>{paid.length} paid</span> ·{' '}
