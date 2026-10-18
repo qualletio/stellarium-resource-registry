@@ -62,7 +62,7 @@ services:
     environment:
       DATABASE_URL: postgresql://registry:local-only-password@postgres:5432/registry
       SYNC_NODE_URL: http://local-source-node:3100
-      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-60000}
+      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-7200000}
       ADMIN_API_KEY: ${ADMIN_API_KEY:-local-admin-key}
       WEB_ORIGIN: http://localhost:3000
     ports:

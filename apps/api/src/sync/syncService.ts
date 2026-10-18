@@ -26,7 +26,7 @@ export function functionsHash(resource: NodeResource): string {
     return createHash('sha256').update(JSON.stringify(resource.functions)).digest('hex');
 }
 
-/** Runs kept in `sync_runs`. One run a minute adds ~1,440 rows a day. */
+/** Runs kept in `sync_runs`. One run every two hours adds 12 rows a day. */
 const KEPT_SYNC_RUNS = 1_000;
 
 const fqnOf = (resource: { path: string; name: string }) => `${resource.path}.${resource.name}`;

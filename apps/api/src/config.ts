@@ -30,7 +30,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     return {
         databaseUrl,
         syncNodeUrl: syncNodeUrl.replace(/\/+$/, ''),
-        syncIntervalMs: positiveInt('SYNC_INTERVAL_MS', env.SYNC_INTERVAL_MS, 60_000),
+        syncIntervalMs: positiveInt('SYNC_INTERVAL_MS', env.SYNC_INTERVAL_MS, 2 * 60 * 60_000),
         grantProbeIntervalMs: positiveInt('GRANT_PROBE_INTERVAL_MS', env.GRANT_PROBE_INTERVAL_MS, 60 * 60_000),
         adminApiKey: env.ADMIN_API_KEY || undefined,
         webOrigin: env.WEB_ORIGIN ?? 'http://localhost:3000',
