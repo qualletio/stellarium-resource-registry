@@ -29,6 +29,14 @@
   text-shadow: var(--glow);
 }
 
+.description {
+  margin: 12px 0 0;
+  max-width: 80ch;
+  color: var(--fg-strong);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
 .meta {
   display: grid;
   grid-template-columns: 12ch 1fr;

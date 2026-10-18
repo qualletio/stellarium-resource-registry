@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Database } from '../db/database.js';
 import { nodesTable, resourceFunctionsTable, resourcesTable } from '../db/schema.js';
 import {
+    described,
     freePort,
     open,
     PEER_RESOURCES,
@@ -59,16 +60,32 @@ describe('SyncService against a real stellarium-ts node', () => {
 
         const detail = await repository.getResource('io.quallet.finance.Ledger');
         expect(detail?.functions).toEqual([
-            { name: 'balance', returnType: 'int64', parameters: [{ name: 'account', type: 'string' }], paymentManifest: null, restricted: true },
+            {
+                name: 'balance',
+                returnType: 'int64',
+                description: 'The account\'s balance, in lamports.',
+                parameters: [{ name: 'account', type: 'string', description: 'The account ID.' }],
+                paymentManifest: null,
+                restricted: true,
+            },
             {
                 name: 'transfer',
                 returnType: 'boolean',
-                parameters: [{ name: 'from', type: 'string' }, { name: 'to', type: 'string' }, { name: 'amount', type: 'int64' }],
+                description: 'Moves funds between two accounts. Returns false when the balance is too low.',
+                parameters: [
+                    { name: 'from', type: 'string', description: 'The account to debit.' },
+                    { name: 'to', type: 'string', description: 'The account to credit.' },
+                    { name: 'amount', type: 'int64', description: 'How much to move, in lamports.' },
+                ],
                 paymentManifest: { costLamports: 5_000, recipientAddress: SAMPLE_RECIPIENT },
                 restricted: true,
             },
-            { name: 'rates', returnType: 'string', parameters: [], paymentManifest: null, restricted: false },
+            { name: 'rates', returnType: 'string', description: 'Current exchange rates as JSON.', parameters: [], paymentManifest: null, restricted: false },
         ]);
+        expect(detail).toMatchObject({
+            website: 'https://ledger.example.com',
+            description: 'Account balances and transfers. Balance and transfer calls need a grant.',
+        });
         expect(detail?.host).toMatchObject({ baseUrl: node.baseUrl, publicKey: node.publicKey, isSource: true });
     });
 
@@ -98,6 +115,26 @@ describe('SyncService against a real stellarium-ts node', () => {
         await service.sync();
         const detail = await repository.getResource('com.example.Weather');
         expect(detail?.functions.map((fn) => [fn.name, fn.paymentManifest?.costLamports])).toEqual([['temperature', 20_000]]);
+    });
+
+    it('updates descriptions and websites when the node changes them', async () => {
+        await startSource({ resources: [weather] });
+        await service.sync();
+        expect(await repository.getResource('com.example.Weather')).toMatchObject({ website: null, description: null });
+
+        const temperature = described(weather.functions[0], 'Degrees Celsius', { city: 'A city name' });
+        await startSource({ resources: [{ ...weather, website: 'https://weather.example', description: 'Forecasts', functions: [temperature, weather.functions[1]] }] });
+        await service.sync();
+        const detail = await repository.getResource('com.example.Weather');
+        expect(detail).toMatchObject({ website: 'https://weather.example', description: 'Forecasts' });
+        expect(detail?.functions[0]).toMatchObject({ description: 'Degrees Celsius', parameters: [{ name: 'city', description: 'A city name' }] });
+        expect((await repository.search({ in: 'all', paid: false, restricted: false, offset: 0, limit: 10 })).items[0].description).toBe('Forecasts');
+
+        await startSource({ resources: [weather] });
+        await service.sync();
+        const cleared = await repository.getResource('com.example.Weather');
+        expect(cleared).toMatchObject({ website: null, description: null });
+        expect(cleared?.functions[0]).toMatchObject({ description: null, parameters: [{ name: 'city', description: null }] });
     });
 
     it('learns grant support from restricted functions without running any function', async () => {

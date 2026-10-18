@@ -24,6 +24,9 @@ export const resourcesTable = pgTable("resources", {
   // `path.name`. Unique on a node, since `getResource` looks resources up by it.
   fqn: text().notNull().unique(),
   baseUrl: text("base_url").notNull(),
+  // An http(s) URL, as the node lists it.
+  website: text(),
+  description: text(),
   // sha256 of the functions as last synced. Functions are only rewritten when it changes.
   functionsHash: varchar("functions_hash", { length: 64 }).notNull(),
   hostNodeId: integer("host_node_id").references(() => nodesTable.id, { onDelete: 'set null' }),
@@ -41,6 +44,7 @@ export const resourceFunctionsTable = pgTable("resource_functions", {
   resourceId: integer("resource_id").notNull().references(() => resourcesTable.id, { onDelete: 'cascade' }),
   name: text().notNull(),
   returnType: text("return_type").notNull(),
+  description: text(),
   restricted: boolean().notNull().default(false),
   // The function's paymentManifest. Both are null for a free function.
   costLamports: bigint("cost_lamports", { mode: 'number' }),
@@ -57,6 +61,7 @@ export const functionParametersTable = pgTable("function_parameters", {
   functionId: integer("function_id").notNull().references(() => resourceFunctionsTable.id, { onDelete: 'cascade' }),
   name: text().notNull(),
   type: text().notNull(),
+  description: text(),
   position: integer().notNull(),
 }, (table) => [
   index("function_parameters_function_id_idx").on(table.functionId),

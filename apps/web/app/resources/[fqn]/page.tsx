@@ -22,7 +22,7 @@ async function fqnFrom(params: Props['params']): Promise<string> {
 }
 
 /** One line for search results: how many functions, what they cost, and who may call them. */
-function describe(resource: ResourceDetail): string {
+function summarize(resource: ResourceDetail): string {
   const costs = resource.functions.flatMap((fn) => (fn.paymentManifest ? [fn.paymentManifest.costLamports] : []));
   const restricted = resource.functions.filter((fn) => fn.restricted).length;
   const count = `${resource.functions.length} function${resource.functions.length === 1 ? '' : 's'}`;
@@ -41,7 +41,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const resource = await getResource(fqn);
   if (!resource) return { title: fqn };
   return {
-    ...pageMetadata({ title: resource.fqn, description: describe(resource), path: `/resources/${encodeURIComponent(resource.fqn)}` }),
+    // The node's own description says what the resource is for. The summary says what it offers.
+    ...pageMetadata({ title: resource.fqn, description: resource.description ?? summarize(resource), path: `/resources/${encodeURIComponent(resource.fqn)}` }),
     // The source node no longer lists it, so search engines should drop it too.
     ...(resource.removedAt && { robots: { index: false, follow: true } }),
   };
@@ -73,7 +74,20 @@ export default async function ResourcePage({ params }: Props) {
         <CopyButton value={resource.fqn} label="copy fqn" />
       </header>
 
+      {resource.description && <p className={styles.description}>{resource.description}</p>}
+
       <dl className={styles.meta}>
+        {resource.website && (
+          <>
+            <dt>website</dt>
+            <dd>
+              {/* Supplied by the node, so search engines shouldn't treat it as the registry's endorsement. */}
+              <a href={resource.website} target="_blank" rel="nofollow ugc noreferrer">
+                {resource.website}
+              </a>
+            </dd>
+          </>
+        )}
         <dt>functions</dt>
         <dd>
           {resource.functions.length} total · <span className={styles.amber}>{paid.length} paid</span> ·{' '}

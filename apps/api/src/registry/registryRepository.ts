@@ -59,6 +59,7 @@ interface SummaryRow {
     path: string;
     name: string;
     base_url: string;
+    description: string | null;
     last_seen_at: Date | string;
     removed_at: Date | string | null;
     function_count: number | string;
@@ -103,7 +104,7 @@ export class RegistryRepository {
               end, r.fqn asc`;
 
         const rows = rowsOf<SummaryRow>(await this.db.execute(sql`
-            select r.fqn, r.path, r.name, r.base_url, r.last_seen_at, r.removed_at,
+            select r.fqn, r.path, r.name, r.base_url, r.description, r.last_seen_at, r.removed_at,
                    agg.function_count, agg.paid_count, agg.restricted_count, agg.min_cost, agg.max_cost, agg.matched
             from resources r
             cross join lateral (
@@ -129,6 +130,7 @@ export class RegistryRepository {
                 path: row.path,
                 name: row.name,
                 baseUrl: row.base_url,
+                description: row.description,
                 functionCount: Number(row.function_count),
                 matchedFunctions: row.matched ?? [],
                 price: row.min_cost === null || row.max_cost === null ? null : { minLamports: Number(row.min_cost), maxLamports: Number(row.max_cost) },
@@ -163,10 +165,13 @@ export class RegistryRepository {
             path: resource.path,
             name: resource.name,
             baseUrl: resource.baseUrl,
+            website: resource.website,
+            description: resource.description,
             functions: functions.map((fn) => ({
                 name: fn.name,
                 returnType: fn.returnType,
-                parameters: parameters.filter((p) => p.functionId === fn.id).map((p) => ({ name: p.name, type: p.type })),
+                description: fn.description,
+                parameters: parameters.filter((p) => p.functionId === fn.id).map((p) => ({ name: p.name, type: p.type, description: p.description })),
                 paymentManifest: fn.costLamports === null || fn.recipientAddress === null
                     ? null
                     : { costLamports: fn.costLamports, recipientAddress: fn.recipientAddress },

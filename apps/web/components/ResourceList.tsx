@@ -48,6 +48,11 @@ export function ResourceList({ resources, query }: { resources: ResourceSummary[
                 ))}
               </span>
             )}
+            {resource.description && (
+              <span className={styles.description} title={resource.description}>
+                {resource.description}
+              </span>
+            )}
           </span>
           <span className={styles.seen} title={resource.lastSeenAt}>
             {timeAgo(resource.lastSeenAt)}

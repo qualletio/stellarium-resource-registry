@@ -9,7 +9,7 @@ allowBuilds:
   unrs-resolver: false
 
 minimumReleaseAgeExclude:
-  - stellarium-ts@0.13.0
+  - stellarium-ts@0.13.0 || 0.14.0
 
 onlyBuiltDependencies:
   - esbuild

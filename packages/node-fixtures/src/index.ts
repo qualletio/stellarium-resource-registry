@@ -13,6 +13,8 @@ export type FunctionSpec = Omit<StellariumResourceFunction, 'exec' | 'id'>;
 export interface ResourceSpec {
     path: string;
     name: string;
+    website?: string;
+    description?: string;
     functions: FunctionSpec[];
 }
 
@@ -33,37 +35,48 @@ export const paid = (name: string, parameters: string, returnType: string, costL
 /** Callers need a grant from the hosting node. */
 export const restricted = (fn: FunctionSpec): FunctionSpec => ({ ...fn, restricted: true });
 
+/** Describes the function and, by name, any of its parameters. */
+export const described = (fn: FunctionSpec, description: string, parameters: Record<string, string> = {}): FunctionSpec => ({
+    ...fn,
+    description,
+    parameters: fn.parameters.map((parameter) => (parameter.name in parameters ? { ...parameter, description: parameters[parameter.name] } : parameter)),
+});
+
 /** Resources for the node the registry syncs from. Its host issues grants on request. */
 export const SOURCE_RESOURCES: ResourceSpec[] = [
-    { path: 'com.example', name: 'Weather', functions: [
-        paid('temperature', 'city: string', 'int32', 10_000),
-        paid('forecast', 'city: string, days: int32', 'string', 2_500),
-        open('stations', '', '[]string'),
+    { path: 'com.example', name: 'Weather', website: 'https://weather.example.com', description: 'Current conditions and forecasts for cities worldwide.', functions: [
+        described(paid('temperature', 'city: string', 'int32', 10_000), 'The current temperature, in degrees Celsius.', { city: 'A city name, such as "Oslo".' }),
+        described(paid('forecast', 'city: string, days: int32', 'string', 2_500), 'A daily forecast as JSON.', { city: 'A city name, such as "Oslo".', days: 'How many days ahead, from 1 to 7.' }),
+        described(open('stations', '', '[]string'), 'IDs of the weather stations readings come from.'),
     ] },
-    { path: 'com.example', name: 'Echo', functions: [
-        open('echo', 'message: string', 'string'),
-        open('reverse', 'message: string', 'string'),
+    { path: 'com.example', name: 'Echo', description: 'Returns what you send it. Useful for testing a client.', functions: [
+        described(open('echo', 'message: string', 'string'), 'Returns the message unchanged.', { message: 'Any text.' }),
+        described(open('reverse', 'message: string', 'string'), 'Returns the message with its characters reversed.', { message: 'Any text.' }),
     ] },
-    { path: 'io.quallet.finance', name: 'Ledger', functions: [
-        restricted(open('balance', 'account: string', 'int64')),
-        restricted(paid('transfer', 'from: string, to: string, amount: int64', 'boolean', 5_000)),
-        open('rates', '', 'string'),
+    { path: 'io.quallet.finance', name: 'Ledger', website: 'https://ledger.example.com', description: 'Account balances and transfers. Balance and transfer calls need a grant.', functions: [
+        restricted(described(open('balance', 'account: string', 'int64'), 'The account\'s balance, in lamports.', { account: 'The account ID.' })),
+        restricted(described(paid('transfer', 'from: string, to: string, amount: int64', 'boolean', 5_000), 'Moves funds between two accounts. Returns false when the balance is too low.', {
+            from: 'The account to debit.',
+            to: 'The account to credit.',
+            amount: 'How much to move, in lamports.',
+        })),
+        described(open('rates', '', 'string'), 'Current exchange rates as JSON.'),
     ] },
-    { path: 'sh.stellarium.tools', name: 'Geocoder', functions: [
-        paid('lookup', 'address: string', 'string', 1_000),
-        paid('reverse', 'lat: float64, lon: float64', 'string', 1_000),
+    { path: 'sh.stellarium.tools', name: 'Geocoder', website: 'https://geocoder.example.com', description: 'Converts between street addresses and coordinates.', functions: [
+        described(paid('lookup', 'address: string', 'string', 1_000), 'The coordinates of an address, as "lat,lon".', { address: 'A street address, such as "1 Main St, Springfield".' }),
+        described(paid('reverse', 'lat: float64, lon: float64', 'string', 1_000), 'The nearest street address to a point.', { lat: 'Latitude, in degrees.', lon: 'Longitude, in degrees.' }),
     ] },
 ];
 
 /** Resources for a peer of the source node. Its host does not issue grants on request. */
 export const PEER_RESOURCES: ResourceSpec[] = [
-    { path: 'org.archive', name: 'Library', functions: [
-        open('search', 'query: string, limit: int32', '[]string'),
-        restricted(open('checkout', 'bookId: string', 'boolean')),
-        paid('scan', 'bookId: string, page: int32', 'string', 7_500),
+    { path: 'org.archive', name: 'Library', website: 'https://archive.example.org', description: 'Search, check out and scan books from a library catalogue.', functions: [
+        described(open('search', 'query: string, limit: int32', '[]string'), 'Book IDs matching a title or author.', { query: 'Words from a title or author.', limit: 'The most results to return.' }),
+        restricted(described(open('checkout', 'bookId: string', 'boolean'), 'Checks out a book. Returns false when it is already out.', { bookId: 'A book ID from search.' })),
+        described(paid('scan', 'bookId: string, page: int32', 'string', 7_500), 'The text of one scanned page.', { bookId: 'A book ID from search.', page: 'The page number, from 1.' }),
     ] },
-    { path: 'org.archive.internal', name: 'Admin', functions: [
-        restricted(open('purge', 'olderThanDays: int32', 'int32')),
+    { path: 'org.archive.internal', name: 'Admin', description: 'Maintenance tasks for the library\'s operators.', functions: [
+        restricted(described(open('purge', 'olderThanDays: int32', 'int32'), 'Deletes expired checkouts. Returns how many it deleted.', { olderThanDays: 'Only checkouts that expired more than this many days ago.' })),
     ] },
 ];
 
@@ -120,6 +133,8 @@ export async function startNode(options: StartNodeOptions): Promise<RunningNode>
             metadata: {},
             path: spec.path,
             name: spec.name,
+            website: spec.website,
+            description: spec.description,
             functions: spec.functions.map((fn) => ({
                 ...fn,
                 exec: async () => {

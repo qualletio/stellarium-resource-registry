@@ -70,6 +70,15 @@
   font-weight: 600;
 }
 
+.description {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .matched {
   color: var(--cyan);
 }

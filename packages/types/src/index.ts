@@ -35,6 +35,8 @@ export interface ResourceSummary {
     path: string;
     name: string;
     baseUrl: string;
+    /** The resource's own description, as its node lists it. */
+    description: string | null;
     functionCount: number;
     /** Names of the functions that matched the search. Empty when the match was on path or name. */
     matchedFunctions: string[];
@@ -50,6 +52,7 @@ export interface ResourceSummary {
 export interface FunctionParameter {
     name: string;
     type: string;
+    description: string | null;
 }
 
 /** A function's `paymentManifest`, as the hosting node publishes it. */
@@ -61,6 +64,7 @@ export interface PaymentManifest {
 export interface ResourceFunction {
     name: string;
     returnType: string;
+    description: string | null;
     parameters: FunctionParameter[];
     /** Null for a free function. */
     paymentManifest: PaymentManifest | null;
@@ -92,6 +96,9 @@ export interface ResourceDetail {
     path: string;
     name: string;
     baseUrl: string;
+    /** An http(s) URL where callers can learn more about the resource. */
+    website: string | null;
+    description: string | null;
     functions: ResourceFunction[];
     /** The node hosting the resource, when the registry knows it. */
     host: NodeInfo | null;

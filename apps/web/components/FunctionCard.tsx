@@ -23,6 +23,7 @@ function GrantStatus({ host }: { host: NodeInfo | null }) {
 export function FunctionCard({ path, name, fn, host }: Props) {
   const script = requestScriptExample(path, name, fn);
   const capability = capabilityExample(path, name, fn);
+  const describedParameters = fn.parameters.filter((parameter) => parameter.description);
 
   return (
     <article className={styles.card} id={fn.name}>
@@ -50,7 +51,25 @@ export function FunctionCard({ path, name, fn, host }: Props) {
         </div>
       </header>
 
+      {fn.description && <p className={styles.description}>{fn.description}</p>}
+
       <dl className={styles.fields}>
+        {describedParameters.length > 0 && (
+          <>
+            <dt>params</dt>
+            <dd>
+              <ul className={styles.params}>
+                {describedParameters.map((parameter) => (
+                  <li key={parameter.name}>
+                    <span className={styles.param}>{parameter.name}</span>
+                    <span className={styles.punct}> — </span>
+                    {parameter.description}
+                  </li>
+                ))}
+              </ul>
+            </dd>
+          </>
+        )}
         <dt>price</dt>
         <dd>
           {fn.paymentManifest ? (

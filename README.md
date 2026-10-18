@@ -1,6 +1,6 @@
 # stellarium-resource-registry
 
-A public registry of the Resources on the [Stellarium](https://docs.stellarium.sh) network. Anyone can search resources by path, name or function name, and see each function's signature, its price (from its `paymentManifest`) and its access (`restricted`, and whether the hosting node issues grants on request).
+A public registry of the Resources on the [Stellarium](https://docs.stellarium.sh) network. Anyone can search resources by path, name or function name, and see each resource's description and website, each function's signature and description, its price (from its `paymentManifest`) and its access (`restricted`, and whether the hosting node issues grants on request).
 
 ## Layout
 
@@ -44,7 +44,7 @@ To sync a real network instead, set `SYNC_NODE_URL` to any stellarium-ts node. F
 
 Each run reads the source node's public routes, `GET /v1/self`, `/v1/resources` and `/v1/peers` (paged), and copies them into Postgres:
 
-- Resources are keyed by fully qualified name (`path.Name`). Functions, parameters and payment manifests are rewritten only when they change.
+- Resources are keyed by fully qualified name (`path.Name`). Functions, parameters (with their descriptions) and payment manifests are rewritten only when they change. A resource's own description and website are updated on every sync.
 - A resource the node stops listing gets `removed_at` set rather than being deleted. It disappears from search, and its page shows a warning. Nodes the source stops listing are dropped once they host no live resources.
 - **Grant probe.** Who holds a grant is private to the nodes involved, so the registry can only learn whether a host issues grants on request. For each host with a restricted function, it calls one restricted function without authorization (at most once per `GRANT_PROBE_INTERVAL_MS`). The node refuses with 403 before running anything, and includes a `grantEndpoint` if it accepts requests. Open functions are never probed, since calling one would run it.
 - Every run is logged in `sync_runs` (the last 1,000 are kept) and listed by `GET /v1/sync/runs`.

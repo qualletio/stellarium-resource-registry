@@ -21,7 +21,7 @@ export interface SyncServiceOptions {
     logger?: SyncLogger;
 }
 
-/** Changes whenever a function, parameter, price or restriction changes. Key order is fixed by `NodeResource`. */
+/** Changes whenever a function, parameter, description, price or restriction changes. Key order is fixed by `NodeResource`. */
 export function functionsHash(resource: NodeResource): string {
     return createHash('sha256').update(JSON.stringify(resource.functions)).digest('hex');
 }
@@ -129,6 +129,8 @@ export class SyncService {
                 path: resource.path,
                 name: resource.name,
                 baseUrl: resource.baseUrl,
+                website: resource.website ?? null,
+                description: resource.description ?? null,
                 hostNodeId: nodeIds.get(resource.baseUrl) ?? null,
                 functionsHash: hash,
                 lastSeenAt: now,
@@ -177,6 +179,7 @@ export class SyncService {
             resourceId,
             name: fn.name,
             returnType: fn.returnType,
+            description: fn.description ?? null,
             restricted: fn.restricted,
             costLamports: fn.paymentManifest?.costLamports ?? null,
             recipientAddress: fn.paymentManifest?.recipientAddress ?? null,
@@ -188,6 +191,7 @@ export class SyncService {
             functionId: idByName.get(fn.name) as number,
             name: parameter.name,
             type: parameter.type,
+            description: parameter.description ?? null,
             position,
         })));
         if (parameters.length > 0) {

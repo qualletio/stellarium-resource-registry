@@ -85,7 +85,8 @@ describe('routes', () => {
     it('returns resource detail with grant info for its host', async () => {
         const { status, body } = await get('/v1/resources/io.example.Ledger');
         expect(status).toBe(200);
-        expect(body.functions).toEqual([{ name: 'balance', returnType: 'int64', parameters: [], paymentManifest: null, restricted: true }]);
+        expect(body).toMatchObject({ website: null, description: null });
+        expect(body.functions).toEqual([{ name: 'balance', returnType: 'int64', description: null, parameters: [], paymentManifest: null, restricted: true }]);
         expect(body.host).toMatchObject({ acceptsGrantRequests: true, grantEndpoint: `${node.baseUrl}/v1/grants/request` });
         expect((await get('/v1/resources/com.example.Missing')).status).toBe(404);
     });
