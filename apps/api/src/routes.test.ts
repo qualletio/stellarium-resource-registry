@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from './app.js';
-import { open, paid, type RunningNode, restricted, startNode } from '@registry/node-fixtures';
+import { inference, open, paid, perToken, type RunningNode, restricted, SAMPLE_RECIPIENT, startNode } from '@registry/node-fixtures';
 import { SyncService } from './sync/syncService.js';
 import { createTestDatabase } from './testing.js';
 
@@ -24,6 +24,11 @@ describe('routes', () => {
                 { path: 'com.example.weather', name: 'Radar', functions: [open('image', '', 'string')] },
                 { path: 'io.example', name: 'Ledger', functions: [restricted(open('balance', '', 'int64'))] },
                 { path: 'org.percent_sign', name: 'Literal', functions: [open('x', '', 'string')] },
+                { path: 'ai.example', name: 'Assistant', functions: [
+                    perToken(inference('complete', 'prompt: string', 'string'), 3_000_000, 15_000_000),
+                    inference('summarize', 'text: string', 'string'),
+                    paid('classify', 'text: string', 'string', 500),
+                ] },
             ],
         });
         const syncService = new SyncService(database.db, { sourceUrl: node.baseUrl, grantProbeIntervalMs: 60_000 });
@@ -44,13 +49,13 @@ describe('routes', () => {
 
     it('reports stats', async () => {
         const { body } = await get('/v1/stats');
-        expect(body).toMatchObject({ resources: 4, functions: 5, paidFunctions: 2, restrictedFunctions: 1, nodes: 1, lastSync: { status: 'succeeded' } });
+        expect(body).toMatchObject({ resources: 5, functions: 8, paidFunctions: 4, restrictedFunctions: 1, inferenceFunctions: 2, nodes: 1, lastSync: { status: 'succeeded' } });
     });
 
     it('ranks an exact name above prefix and substring matches', async () => {
         const { body } = await get('/v1/resources?q=weather');
         expect(body.items.map((r: { fqn: string }) => r.fqn)).toEqual(['com.example.Weather', 'com.example.weather.Radar']);
-        expect(body.items[0]).toMatchObject({ functionCount: 2, paidFunctionCount: 2, price: { minMicroUsdc: 2_500, maxMicroUsdc: 10_000 } });
+        expect(body.items[0]).toMatchObject({ functionCount: 2, paidFunctionCount: 2, perTokenFunctionCount: 0, inferenceFunctionCount: 0, price: { minMicroUsdc: 2_500, maxMicroUsdc: 10_000 } });
     });
 
     it('searches by path, name or function name', async () => {
@@ -67,9 +72,36 @@ describe('routes', () => {
         expect((await get('/v1/resources?q=%25')).body.items).toEqual([]);
     });
 
-    it('filters to paid or restricted resources', async () => {
-        expect((await get('/v1/resources?paid=true')).body.items.map((r: { fqn: string }) => r.fqn)).toEqual(['com.example.Weather']);
-        expect((await get('/v1/resources?restricted=true')).body.items.map((r: { fqn: string }) => r.fqn)).toEqual(['io.example.Ledger']);
+    it('filters to paid, restricted or inference resources', async () => {
+        const fqns = async (url: string) => (await get(url)).body.items.map((r: { fqn: string }) => r.fqn).sort();
+        expect(await fqns('/v1/resources?paid=true')).toEqual(['ai.example.Assistant', 'com.example.Weather']);
+        expect(await fqns('/v1/resources?restricted=true')).toEqual(['io.example.Ledger']);
+        expect(await fqns('/v1/resources?inference=true')).toEqual(['ai.example.Assistant']);
+    });
+
+    it('keeps per-token functions out of the per-call price range', async () => {
+        const { body } = await get('/v1/resources?q=ai.example.Assistant');
+        expect(body.items[0]).toMatchObject({
+            functionCount: 3,
+            paidFunctionCount: 2,
+            perTokenFunctionCount: 1,
+            inferenceFunctionCount: 2,
+            price: { minMicroUsdc: 500, maxMicroUsdc: 500 },
+        });
+    });
+
+    it('returns an inference function\'s kind and per-token manifest', async () => {
+        const { body } = await get('/v1/resources/ai.example.Assistant');
+        expect(body.functions[0]).toEqual({
+            name: 'complete',
+            returnType: 'string',
+            description: null,
+            parameters: [{ name: 'prompt', type: 'string', description: null }, { name: 'maxTokens', type: 'int32', description: null }],
+            paymentManifest: { inputCostMicroUsdcPerMillionTokens: 3_000_000, outputCostMicroUsdcPerMillionTokens: 15_000_000, recipientAddress: SAMPLE_RECIPIENT },
+            restricted: false,
+            kind: 'inference',
+        });
+        expect(body.functions.map((fn: { kind: string }) => fn.kind)).toEqual(['inference', 'inference', 'fixed']);
     });
 
     it('pages results', async () => {
@@ -77,7 +109,7 @@ describe('routes', () => {
         expect(first.body.items).toHaveLength(3);
         expect(first.body.nextOffset).toBe(3);
         const last = await get('/v1/resources?limit=3&offset=3');
-        expect(last.body.items).toHaveLength(1);
+        expect(last.body.items).toHaveLength(2);
         expect(last.body.nextOffset).toBeNull();
         expect((await get('/v1/resources?limit=1000')).status).toBe(400);
     });
@@ -86,14 +118,14 @@ describe('routes', () => {
         const { status, body } = await get('/v1/resources/io.example.Ledger');
         expect(status).toBe(200);
         expect(body).toMatchObject({ website: null, description: null });
-        expect(body.functions).toEqual([{ name: 'balance', returnType: 'int64', description: null, parameters: [], paymentManifest: null, restricted: true }]);
+        expect(body.functions).toEqual([{ name: 'balance', returnType: 'int64', description: null, parameters: [], paymentManifest: null, restricted: true, kind: 'fixed' }]);
         expect(body.host).toMatchObject({ acceptsGrantRequests: true, grantEndpoint: `${node.baseUrl}/v1/grants/request` });
         expect((await get('/v1/resources/com.example.Missing')).status).toBe(404);
     });
 
     it('lists nodes and sync runs', async () => {
-        expect((await get('/v1/nodes')).body.items).toMatchObject([{ baseUrl: node.baseUrl, isSource: true, resourceCount: 4 }]);
-        expect((await get('/v1/sync/runs')).body.items[0]).toMatchObject({ status: 'succeeded', resourcesSeen: 4 });
+        expect((await get('/v1/nodes')).body.items).toMatchObject([{ baseUrl: node.baseUrl, isSource: true, resourceCount: 5 }]);
+        expect((await get('/v1/sync/runs')).body.items[0]).toMatchObject({ status: 'succeeded', resourcesSeen: 5 });
     });
 
     it('requires the admin key to trigger a sync', async () => {
@@ -101,6 +133,6 @@ describe('routes', () => {
         expect((await app.inject({ method: 'POST', url: '/v1/sync', headers: { authorization: 'Bearer wrong' } })).statusCode).toBe(401);
         const response = await app.inject({ method: 'POST', url: '/v1/sync', headers: { authorization: 'Bearer admin-key' } });
         expect(response.statusCode).toBe(200);
-        expect(response.json()).toMatchObject({ status: 'succeeded', resourcesSeen: 4, resourcesAdded: 0 });
+        expect(response.json()).toMatchObject({ status: 'succeeded', resourcesSeen: 5, resourcesAdded: 0 });
     });
 });

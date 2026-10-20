@@ -39,6 +39,9 @@ export const resourcesTable = pgTable("resources", {
   index("resources_name_trgm_idx").using("gin", table.name.op("gin_trgm_ops")),
 ]);
 
+// Mirrors `FUNCTION_KINDS` in @registry/types.
+export const FUNCTION_KINDS = ['fixed', 'inference'] as const;
+
 export const resourceFunctionsTable = pgTable("resource_functions", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
   resourceId: integer("resource_id").notNull().references(() => resourcesTable.id, { onDelete: 'cascade' }),
@@ -46,8 +49,12 @@ export const resourceFunctionsTable = pgTable("resource_functions", {
   returnType: text("return_type").notNull(),
   description: text(),
   restricted: boolean().notNull().default(false),
-  // The function's paymentManifest. Both are null for a free function.
+  kind: varchar({ length: 16, enum: FUNCTION_KINDS }).notNull().default('fixed'),
+  // The function's paymentManifest. All null for a free function. A paid fixed function has a cost,
+  // a paid inference function both rates.
   costMicroUsdc: bigint("cost_micro_usdc", { mode: 'number' }),
+  inputCostMicroUsdcPerMillionTokens: bigint("input_cost_micro_usdc_per_million_tokens", { mode: 'number' }),
+  outputCostMicroUsdcPerMillionTokens: bigint("output_cost_micro_usdc_per_million_tokens", { mode: 'number' }),
   recipientAddress: varchar("recipient_address", { length: 64 }),
   // Order the node listed the function in.
   position: integer().notNull(),

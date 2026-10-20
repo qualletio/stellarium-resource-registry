@@ -1,4 +1,4 @@
-import type { ResourceDetail } from '@registry/types';
+import { isInferenceManifest, type ResourceDetail } from '@registry/types';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -21,15 +21,23 @@ async function fqnFrom(params: Props['params']): Promise<string> {
   }
 }
 
+/** Per-call costs of the paid fixed functions, and how many paid inference functions are priced per token instead. */
+function pricing(resource: ResourceDetail) {
+  const manifests = resource.functions.flatMap((fn) => (fn.paymentManifest ? [fn.paymentManifest] : []));
+  const costs = manifests.flatMap((manifest) => (isInferenceManifest(manifest) ? [] : [manifest.costMicroUsdc]));
+  return { paid: manifests.length, costs, perToken: manifests.length - costs.length };
+}
+
 /** One line for search results: how many functions, what they cost, and who may call them. */
 function summarize(resource: ResourceDetail): string {
-  const costs = resource.functions.flatMap((fn) => (fn.paymentManifest ? [fn.paymentManifest.costMicroUsdc] : []));
+  const { paid, costs, perToken } = pricing(resource);
   const restricted = resource.functions.filter((fn) => fn.restricted).length;
   const count = `${resource.functions.length} function${resource.functions.length === 1 ? '' : 's'}`;
-  const price =
-    costs.length === 0
-      ? 'all free'
-      : `${costs.length} paid, from ${formatUsdc(Math.min(...costs))} per call`;
+  const prices = [
+    ...(costs.length > 0 ? [`from ${formatUsdc(Math.min(...costs))} per call`] : []),
+    ...(perToken > 0 ? [`${perToken} priced per token`] : []),
+  ];
+  const price = paid === 0 ? 'all free' : `${paid} paid, ${prices.join(', ')}`;
   const access = restricted === 0 ? 'all open to any caller' : `${restricted} restricted to grant holders`;
   const names = resource.functions.slice(0, 5).map((fn) => `${fn.name}()`);
   const more = resource.functions.length > names.length ? ', …' : '';
@@ -52,9 +60,15 @@ export default async function ResourcePage({ params }: Props) {
   const resource = await getResource(await fqnFrom(params));
   if (!resource) notFound();
 
-  const paid = resource.functions.filter((fn) => fn.paymentManifest);
+  const { paid, costs, perToken } = pricing(resource);
   const restricted = resource.functions.filter((fn) => fn.restricted).length;
-  const costs = paid.map((fn) => fn.paymentManifest?.costMicroUsdc ?? 0);
+  const inference = resource.functions.filter((fn) => fn.kind === 'inference').length;
+  const perCall =
+    costs.length === 0
+      ? undefined
+      : Math.min(...costs) === Math.max(...costs)
+        ? `${formatUsdc(costs[0])} per call`
+        : `${formatUsdc(Math.min(...costs))} – ${formatUsdc(Math.max(...costs))} per call`;
 
   return (
     <>
@@ -90,16 +104,19 @@ export default async function ResourcePage({ params }: Props) {
         )}
         <dt>functions</dt>
         <dd>
-          {resource.functions.length} total · <span className={styles.amber}>{paid.length} paid</span> ·{' '}
+          {resource.functions.length} total · <span className={styles.amber}>{paid} paid</span> ·{' '}
+          {inference > 0 && (
+            <>
+              <span className={styles.cyan}>{inference} inference</span> ·{' '}
+            </>
+          )}
           <span className={styles.danger}>{restricted} restricted</span>
         </dd>
         <dt>pricing</dt>
         <dd>
-          {costs.length === 0
+          {paid === 0
             ? 'free'
-            : Math.min(...costs) === Math.max(...costs)
-              ? `${formatUsdc(costs[0])} per call`
-              : `${formatUsdc(Math.min(...costs))} – ${formatUsdc(Math.max(...costs))} per call`}
+            : [perCall, perToken > 0 && `${perToken} inference function${perToken === 1 ? '' : 's'} priced per token`].filter(Boolean).join(' · ')}
         </dd>
         <dt>grants</dt>
         <dd>

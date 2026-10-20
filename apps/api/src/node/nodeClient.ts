@@ -16,13 +16,19 @@ export interface NodePeer {
     publicKey: string;
 }
 
+export type NodePaymentManifest =
+    | { costMicroUsdc: number; recipientAddress: string }
+    | { inputCostMicroUsdcPerMillionTokens: number; outputCostMicroUsdcPerMillionTokens: number; recipientAddress: string };
+
 export interface NodeFunction {
     name: string;
     returnType: string;
     description?: string;
     parameters: { name: string; type: string; description?: string }[];
-    paymentManifest?: { costMicroUsdc: number; recipientAddress: string };
+    /** Per-call for a fixed function, per-token for an inference function. */
+    paymentManifest?: NodePaymentManifest;
     restricted: boolean;
+    kind: 'fixed' | 'inference';
 }
 
 export interface NodeResource {
@@ -54,6 +60,10 @@ const MAX_PAGES = 1_000;
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
+const isNonnegativeSafeInteger = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
+
+/** The parameter every inference function takes: the most output tokens a caller allows (`MAX_TOKENS_PARAMETER` in stellarium-ts). */
+const MAX_TOKENS_PARAMETER = 'maxTokens';
 
 const isHttpUrl = (value: string): boolean => {
     try {
@@ -96,10 +106,31 @@ function parsePeer(value: unknown): NodePeer | undefined {
     };
 }
 
+/** Absent means fixed, as nodes only send `kind` for inference functions. Any other value is malformed. */
+function parseKind(value: unknown): NodeFunction['kind'] | undefined {
+    if (value === undefined || value === null) return 'fixed';
+    return value === 'fixed' || value === 'inference' ? value : undefined;
+}
+
+/** A fixed function is priced per call, an inference function per million input and output tokens. */
+function parsePaymentManifest(value: unknown, kind: NodeFunction['kind']): Optional<NodePaymentManifest> {
+    if (value === undefined || value === null) return { ok: true };
+    if (!isObject(value) || !isNonEmptyString(value.recipientAddress)) return { ok: false };
+    if (kind === 'inference') {
+        const { inputCostMicroUsdcPerMillionTokens: input, outputCostMicroUsdcPerMillionTokens: output } = value;
+        if (!isNonnegativeSafeInteger(input) || !isNonnegativeSafeInteger(output)) return { ok: false };
+        return { ok: true, value: { inputCostMicroUsdcPerMillionTokens: input, outputCostMicroUsdcPerMillionTokens: output, recipientAddress: value.recipientAddress } };
+    }
+    if (!isNonnegativeSafeInteger(value.costMicroUsdc)) return { ok: false };
+    return { ok: true, value: { costMicroUsdc: value.costMicroUsdc, recipientAddress: value.recipientAddress } };
+}
+
 function parseFunction(value: unknown): NodeFunction | undefined {
     if (!isObject(value) || !isNonEmptyString(value.name) || typeof value.returnType !== 'string' || !Array.isArray(value.parameters)) {
         return undefined;
     }
+    const kind = parseKind(value.kind);
+    if (!kind) return undefined;
     const description = parseDescription(value.description);
     if (!description.ok) return undefined;
     const parameters: NodeFunction['parameters'] = [];
@@ -110,22 +141,21 @@ function parseFunction(value: unknown): NodeFunction | undefined {
         parameters.push({ name: parameter.name, type: parameter.type, description: parameterDescription.value });
     }
 
-    let paymentManifest: NodeFunction['paymentManifest'];
-    if (value.paymentManifest !== undefined && value.paymentManifest !== null) {
-        const manifest = value.paymentManifest;
-        if (!isObject(manifest) || !Number.isSafeInteger(manifest.costMicroUsdc) || (manifest.costMicroUsdc as number) < 0 || !isNonEmptyString(manifest.recipientAddress)) {
-            return undefined;
-        }
-        paymentManifest = { costMicroUsdc: manifest.costMicroUsdc as number, recipientAddress: manifest.recipientAddress };
+    // Nodes refuse to register an inference function without it, so one that lacks it is malformed.
+    if (kind === 'inference' && parameters.find((parameter) => parameter.name === MAX_TOKENS_PARAMETER)?.type !== 'int32') {
+        return undefined;
     }
+    const paymentManifest = parsePaymentManifest(value.paymentManifest, kind);
+    if (!paymentManifest.ok) return undefined;
 
     return {
         name: value.name,
         returnType: value.returnType,
         description: description.value,
         parameters,
-        paymentManifest,
+        paymentManifest: paymentManifest.value,
         restricted: value.restricted === true,
+        kind,
     };
 }
 

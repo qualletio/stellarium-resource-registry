@@ -1,4 +1,4 @@
-import type { NodeInfo, NodeSummary, Page, ResourceDetail, ResourceSummary, SearchField, Stats, SyncRun } from "@registry/types";
+import type { NodeInfo, NodeSummary, Page, PaymentManifest, ResourceDetail, ResourceSummary, SearchField, Stats, SyncRun } from "@registry/types";
 import { asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/database.js";
 import { functionParametersTable, nodesTable, resourceFunctionsTable, resourcesTable, syncRunsTable } from "../db/schema.js";
@@ -8,6 +8,7 @@ export interface SearchOptions {
     in: SearchField;
     paid: boolean;
     restricted: boolean;
+    inference: boolean;
     offset: number;
     limit: number;
 }
@@ -26,6 +27,21 @@ function rowsOf<T>(result: unknown): T[] {
 
 type NodeRow = typeof nodesTable.$inferSelect;
 type SyncRunRow = typeof syncRunsTable.$inferSelect;
+type FunctionRow = typeof resourceFunctionsTable.$inferSelect;
+
+/** Per-token rates for an inference function, a flat cost for a fixed one. Null for a free function. */
+function toPaymentManifest(fn: FunctionRow): PaymentManifest | null {
+    if (fn.recipientAddress === null) return null;
+    if (fn.kind === 'inference') {
+        if (fn.inputCostMicroUsdcPerMillionTokens === null || fn.outputCostMicroUsdcPerMillionTokens === null) return null;
+        return {
+            inputCostMicroUsdcPerMillionTokens: fn.inputCostMicroUsdcPerMillionTokens,
+            outputCostMicroUsdcPerMillionTokens: fn.outputCostMicroUsdcPerMillionTokens,
+            recipientAddress: fn.recipientAddress,
+        };
+    }
+    return fn.costMicroUsdc === null ? null : { costMicroUsdc: fn.costMicroUsdc, recipientAddress: fn.recipientAddress };
+}
 
 export function toNodeInfo(node: NodeRow): NodeInfo {
     return {
@@ -64,7 +80,9 @@ interface SummaryRow {
     removed_at: Date | string | null;
     function_count: number | string;
     paid_count: number | string;
+    per_token_count: number | string;
     restricted_count: number | string;
+    inference_count: number | string;
     min_cost: number | string | null;
     max_cost: number | string | null;
     matched: string[] | null;
@@ -92,6 +110,7 @@ export class RegistryRepository {
         }
         if (options.paid) conditions.push(sql`agg.paid_count > 0`);
         if (options.restricted) conditions.push(sql`agg.restricted_count > 0`);
+        if (options.inference) conditions.push(sql`agg.inference_count > 0`);
 
         // Exact names first, then prefixes, then substring and function-name matches.
         const order = q === ''
@@ -105,12 +124,15 @@ export class RegistryRepository {
 
         const rows = rowsOf<SummaryRow>(await this.db.execute(sql`
             select r.fqn, r.path, r.name, r.base_url, r.description, r.last_seen_at, r.removed_at,
-                   agg.function_count, agg.paid_count, agg.restricted_count, agg.min_cost, agg.max_cost, agg.matched
+                   agg.function_count, agg.paid_count, agg.per_token_count, agg.restricted_count, agg.inference_count,
+                   agg.min_cost, agg.max_cost, agg.matched
             from resources r
             cross join lateral (
                 select count(*) as function_count,
-                       count(f.cost_micro_usdc) as paid_count,
+                       count(f.recipient_address) as paid_count,
+                       count(f.input_cost_micro_usdc_per_million_tokens) as per_token_count,
                        count(*) filter (where f.restricted) as restricted_count,
+                       count(*) filter (where f.kind = 'inference') as inference_count,
                        min(f.cost_micro_usdc) as min_cost,
                        max(f.cost_micro_usdc) as max_cost,
                        ${matchesFunctions
@@ -135,7 +157,9 @@ export class RegistryRepository {
                 matchedFunctions: row.matched ?? [],
                 price: row.min_cost === null || row.max_cost === null ? null : { minMicroUsdc: Number(row.min_cost), maxMicroUsdc: Number(row.max_cost) },
                 paidFunctionCount: Number(row.paid_count),
+                perTokenFunctionCount: Number(row.per_token_count),
                 restrictedFunctionCount: Number(row.restricted_count),
+                inferenceFunctionCount: Number(row.inference_count),
                 lastSeenAt: iso(row.last_seen_at) as string,
                 removedAt: iso(row.removed_at),
             })),
@@ -172,10 +196,9 @@ export class RegistryRepository {
                 returnType: fn.returnType,
                 description: fn.description,
                 parameters: parameters.filter((p) => p.functionId === fn.id).map((p) => ({ name: p.name, type: p.type, description: p.description })),
-                paymentManifest: fn.costMicroUsdc === null || fn.recipientAddress === null
-                    ? null
-                    : { costMicroUsdc: fn.costMicroUsdc, recipientAddress: fn.recipientAddress },
+                paymentManifest: toPaymentManifest(fn),
                 restricted: fn.restricted,
+                kind: fn.kind,
             })),
             host: row.nodes ? toNodeInfo(row.nodes) : null,
             firstSeenAt: iso(resource.firstSeenAt) as string,
@@ -207,8 +230,9 @@ export class RegistryRepository {
             select
                 (select count(*) from resources where removed_at is null) as resources,
                 count(f.id) as functions,
-                count(f.cost_micro_usdc) as paid_functions,
+                count(f.recipient_address) as paid_functions,
                 count(*) filter (where f.restricted) as restricted_functions,
+                count(*) filter (where f.kind = 'inference') as inference_functions,
                 (select count(*) from nodes) as nodes
             from resource_functions f
             join resources r on r.id = f.resource_id and r.removed_at is null
@@ -223,6 +247,7 @@ export class RegistryRepository {
             functions: Number(counts.functions),
             paidFunctions: Number(counts.paid_functions),
             restrictedFunctions: Number(counts.restricted_functions),
+            inferenceFunctions: Number(counts.inference_functions),
             nodes: Number(counts.nodes),
             sourceUrl: this.sourceUrl,
             lastSync: lastSync ? toSyncRun(lastSync) : null,

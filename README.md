@@ -1,6 +1,6 @@
 # stellarium-resource-registry
 
-A public registry of the Resources on the [Stellarium](https://docs.stellarium.sh) network. Anyone can search resources by path, name or function name, and see each resource's description and website, each function's signature and description, its price (from its `paymentManifest`) and its access (`restricted`, and whether the hosting node issues grants on request).
+A public registry of the Resources on the [Stellarium](https://docs.stellarium.sh) network. Anyone can search resources by path, name or function name, and see each resource's description and website, each function's signature and description, its kind (fixed, or `inference` for AI inference), its price (from its `paymentManifest`: per call, or per million input and output tokens for an inference function) and its access (`restricted`, and whether the hosting node issues grants on request).
 
 ## Layout
 
@@ -11,7 +11,7 @@ A public registry of the Resources on the [Stellarium](https://docs.stellarium.s
 | `apps/local-source-node` | A real stellarium-ts node the registry syncs from (:3100). Bootstraps from the peer and issues grants on request. |
 | `apps/local-peer-node` | A real stellarium-ts node hosting `org.archive.*` (:3101). Refuses grant requests. |
 | `packages/types` | `@registry/types`: the API's wire types, shared by both apps. |
-| `packages/node-fixtures` | `@registry/node-fixtures`: starts stellarium-ts nodes with sample resources (free, paid, restricted, and paid-and-restricted). Used by the local node apps and the API tests. |
+| `packages/node-fixtures` | `@registry/node-fixtures`: starts stellarium-ts nodes with sample resources (free, paid, restricted, and paid-and-restricted, plus free and per-token inference functions). Used by the local node apps and the API tests. |
 
 ## Running locally
 
@@ -54,8 +54,8 @@ Each run reads the source node's public routes, `GET /v1/self`, `/v1/resources` 
 | Route | |
 | - | - |
 | `GET /v1/stats` | Counts and the last successful sync |
-| `GET /v1/resources?q=&in=all\|path\|name\|function&paid=&restricted=&offset=&limit=` | Search. Exact names rank first, then prefixes, then substrings |
-| `GET /v1/resources/:fqn` | Functions, prices, access and the host's grant info |
+| `GET /v1/resources?q=&in=all\|path\|name\|function&paid=&restricted=&inference=&offset=&limit=` | Search. Exact names rank first, then prefixes, then substrings |
+| `GET /v1/resources/:fqn` | Functions, kinds, prices, access and the host's grant info |
 | `GET /v1/nodes` | Source node, peers and hosts |
 | `GET /v1/sync/runs?limit=` | Recent sync runs |
 | `POST /v1/sync` | Sync now. Requires `Authorization: Bearer $ADMIN_API_KEY` |

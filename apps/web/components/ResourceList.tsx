@@ -5,11 +5,16 @@ import { AccessIcon } from './AccessIcon';
 import { Highlight } from './Highlight';
 import styles from './ResourceList.module.css';
 
+/** "free", a per-call range, "per token" for paid inference functions, or a mix: "free / 0.01 USDC / per token". */
 function priceLabel(resource: ResourceSummary): string {
-  if (!resource.price) return 'free';
-  const { minMicroUsdc, maxMicroUsdc } = resource.price;
-  const range = minMicroUsdc === maxMicroUsdc ? formatUsdc(minMicroUsdc) : `${formatUsdc(minMicroUsdc).replace(' USDC', '')}–${formatUsdc(maxMicroUsdc)}`;
-  return resource.paidFunctionCount < resource.functionCount ? `free / ${range}` : range;
+  const parts: string[] = [];
+  if (resource.paidFunctionCount < resource.functionCount) parts.push('free');
+  if (resource.price) {
+    const { minMicroUsdc, maxMicroUsdc } = resource.price;
+    parts.push(minMicroUsdc === maxMicroUsdc ? formatUsdc(minMicroUsdc) : `${formatUsdc(minMicroUsdc).replace(' USDC', '')}–${formatUsdc(maxMicroUsdc)}`);
+  }
+  if (resource.perTokenFunctionCount > 0) parts.push('per token');
+  return parts.join(' / ');
 }
 
 /** Results laid out like `ls -l`: access icon, function count, price, name. */
@@ -28,7 +33,9 @@ export function ResourceList({ resources, query }: { resources: ResourceSummary[
           <span className={styles.count} title="functions">
             {String(resource.functionCount).padStart(2, ' ')} fn
           </span>
-          <span className={resource.price ? styles.paid : styles.free} title="price per call">{priceLabel(resource)}</span>
+          <span className={resource.paidFunctionCount > 0 ? styles.paid : styles.free} title="price per call, or per token for inference functions">
+            {priceLabel(resource)}
+          </span>
           <span className={styles.name}>
             <Link href={`/resources/${encodeURIComponent(resource.fqn)}`}>
               <span className={styles.path}>

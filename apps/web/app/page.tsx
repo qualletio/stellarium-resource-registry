@@ -44,7 +44,7 @@ export default async function HomePage() {
           call costs and who may make it.
           <span className={terminal.cursor} aria-hidden="true" />
         </p>
-        <SearchPrompt initial={{ q: '', in: 'all', paid: false, restricted: false }} autoFocus />
+        <SearchPrompt initial={{ q: '', in: 'all', paid: false, restricted: false, inference: false }} autoFocus />
       </section>
 
       <section className={terminal.section}>
@@ -75,8 +75,13 @@ export default async function HomePage() {
           </dd>
           <dt>paid</dt>
           <dd>
-            A function with a <code>paymentManifest</code> costs a fixed amount of USDC per call. Your node pays it with a signed
-            voucher, settled on Solana from your escrow.
+            A function with a <code>paymentManifest</code> costs a fixed amount of USDC per call, or for an inference function, a rate
+            per million input and output tokens. Your node pays it with a signed voucher, settled on Solana from your escrow.
+          </dd>
+          <dt>inference</dt>
+          <dd>
+            A function that runs AI inference. It takes <code>maxTokens</code>, the most output tokens you allow. Before a paid call,
+            the host estimates the input tokens, and your node caps what it signs for at that estimate plus <code>maxTokens</code>.
           </dd>
           <dt>restricted</dt>
           <dd>

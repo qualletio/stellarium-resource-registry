@@ -1,4 +1,4 @@
-import type { NodeInfo, ResourceFunction } from '@registry/types';
+import { isInferenceManifest, type NodeInfo, type PaymentManifest, type ResourceFunction } from '@registry/types';
 import { capabilityExample, formatMicroUsdc, formatUsdc, requestScriptExample } from '@/lib/format';
 import { CopyButton } from './CopyButton';
 import styles from './FunctionCard.module.css';
@@ -18,6 +18,45 @@ function GrantStatus({ host }: { host: NodeInfo | null }) {
     return <span className={styles.danger}>closed: the host issues grants out of band only</span>;
   }
   return <span className={styles.ok}>open: the host issues grants on request</span>;
+}
+
+function Price({ manifest }: { manifest: PaymentManifest | null }) {
+  if (!manifest) return <span className={styles.muted}>free: no paymentManifest</span>;
+  if (isInferenceManifest(manifest)) {
+    return (
+      <>
+        <span className={styles.amber}>{formatUsdc(manifest.inputCostMicroUsdcPerMillionTokens)}</span>{' '}
+        <span className={styles.muted}>per 1M input tokens</span> ·{' '}
+        <span className={styles.amber}>{formatUsdc(manifest.outputCostMicroUsdcPerMillionTokens)}</span>{' '}
+        <span className={styles.muted}>per 1M output tokens</span>
+      </>
+    );
+  }
+  return (
+    <>
+      <span className={styles.amber}>{formatUsdc(manifest.costMicroUsdc)}</span>{' '}
+      <span className={styles.muted}>({formatMicroUsdc(manifest.costMicroUsdc)}) per call</span>
+    </>
+  );
+}
+
+function PaymentNote({ manifest }: { manifest: PaymentManifest }) {
+  if (isInferenceManifest(manifest)) {
+    return (
+      <p className={styles.note}>
+        Your node first asks the host for an estimate: the input tokens, and <code>maxAmount</code>, the charge for those plus{' '}
+        <code>maxTokens</code> output tokens. It signs an inference voucher for <code>maxAmount</code> if that is within its{' '}
+        <code>INFERENCE_COST_LIMIT_MICRO_USDC</code>. The operator charges the tokens the call actually used at these rates, never
+        more than <code>maxAmount</code>, from your escrow: 80% to the recipient, 20% protocol fee.
+      </p>
+    );
+  }
+  return (
+    <p className={styles.note}>
+      Your node signs a payment voucher for {formatUsdc(manifest.costMicroUsdc)} with each call. The operator settles it from your
+      escrow: 80% to the recipient, 20% protocol fee.
+    </p>
+  );
 }
 
 export function FunctionCard({ path, name, fn, host }: Props) {
@@ -46,6 +85,7 @@ export function FunctionCard({ path, name, fn, host }: Props) {
           <span className={styles.type}>{fn.returnType}</span>
         </h3>
         <div className={styles.badges}>
+          {fn.kind === 'inference' && <span className={styles.badgeInference}>inference</span>}
           <span className={fn.paymentManifest ? styles.badgePaid : styles.badgeFree}>{fn.paymentManifest ? 'paid' : 'free'}</span>
           <span className={fn.restricted ? styles.badgeRestricted : styles.badgeOpen}>{fn.restricted ? 'restricted' : 'open'}</span>
         </div>
@@ -70,16 +110,18 @@ export function FunctionCard({ path, name, fn, host }: Props) {
             </dd>
           </>
         )}
+        {fn.kind === 'inference' && (
+          <>
+            <dt>kind</dt>
+            <dd>
+              <span className={styles.cyan}>inference</span>
+              <span className={styles.muted}>: runs AI inference; maxTokens caps the output tokens</span>
+            </dd>
+          </>
+        )}
         <dt>price</dt>
         <dd>
-          {fn.paymentManifest ? (
-            <>
-              <span className={styles.amber}>{formatUsdc(fn.paymentManifest.costMicroUsdc)}</span>{' '}
-              <span className={styles.muted}>({formatMicroUsdc(fn.paymentManifest.costMicroUsdc)}) per call</span>
-            </>
-          ) : (
-            <span className={styles.muted}>free: no paymentManifest</span>
-          )}
+          <Price manifest={fn.paymentManifest} />
         </dd>
         {fn.paymentManifest && (
           <>
@@ -128,12 +170,7 @@ export function FunctionCard({ path, name, fn, host }: Props) {
             <pre className={styles.code}>{capability}</pre>
           </div>
         )}
-        {fn.paymentManifest && (
-          <p className={styles.note}>
-            Your node signs a payment voucher for {formatUsdc(fn.paymentManifest.costMicroUsdc)} with each call. The operator settles it
-            from your escrow: 80% to the recipient, 20% protocol fee.
-          </p>
-        )}
+        {fn.paymentManifest && <PaymentNote manifest={fn.paymentManifest} />}
       </details>
     </article>
   );

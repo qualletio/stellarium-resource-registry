@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, desc, eq, inArray, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import type { Database } from "../db/database.js";
 import { functionParametersTable, nodesTable, resourceFunctionsTable, resourcesTable, syncRunsTable } from "../db/schema.js";
-import { NodeClient, type NodePeer, type NodeResource } from "../node/nodeClient.js";
+import { NodeClient, type NodePaymentManifest, type NodePeer, type NodeResource } from "../node/nodeClient.js";
 
 export type SyncRunRow = typeof syncRunsTable.$inferSelect;
 
@@ -21,9 +21,19 @@ export interface SyncServiceOptions {
     logger?: SyncLogger;
 }
 
-/** Changes whenever a function, parameter, description, price or restriction changes. Key order is fixed by `NodeResource`. */
+/** Changes whenever a function, parameter, description, price, restriction or kind changes. Key order is fixed by `NodeResource`. */
 export function functionsHash(resource: NodeResource): string {
     return createHash('sha256').update(JSON.stringify(resource.functions)).digest('hex');
+}
+
+/** A function's paymentManifest as `resource_functions` columns, all null for a free function. */
+function manifestColumns(manifest: NodePaymentManifest | undefined) {
+    return {
+        costMicroUsdc: manifest && 'costMicroUsdc' in manifest ? manifest.costMicroUsdc : null,
+        inputCostMicroUsdcPerMillionTokens: manifest && 'inputCostMicroUsdcPerMillionTokens' in manifest ? manifest.inputCostMicroUsdcPerMillionTokens : null,
+        outputCostMicroUsdcPerMillionTokens: manifest && 'outputCostMicroUsdcPerMillionTokens' in manifest ? manifest.outputCostMicroUsdcPerMillionTokens : null,
+        recipientAddress: manifest?.recipientAddress ?? null,
+    };
 }
 
 /** Runs kept in `sync_runs`. One run every two hours adds 12 rows a day. */
@@ -181,8 +191,8 @@ export class SyncService {
             returnType: fn.returnType,
             description: fn.description ?? null,
             restricted: fn.restricted,
-            costMicroUsdc: fn.paymentManifest?.costMicroUsdc ?? null,
-            recipientAddress: fn.paymentManifest?.recipientAddress ?? null,
+            kind: fn.kind,
+            ...manifestColumns(fn.paymentManifest),
             position,
         }))).returning({ id: resourceFunctionsTable.id, name: resourceFunctionsTable.name });
 

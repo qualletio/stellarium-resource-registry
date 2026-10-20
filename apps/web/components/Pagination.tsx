@@ -8,6 +8,7 @@ function hrefFor(query: SearchQuery, offset: number): string {
   if (query.in && query.in !== 'all') params.set('in', query.in);
   if (query.paid) params.set('paid', 'true');
   if (query.restricted) params.set('restricted', 'true');
+  if (query.inference) params.set('inference', 'true');
   if (offset > 0) params.set('offset', String(offset));
   const search = params.toString();
   return search ? `/search?${search}` : '/search';

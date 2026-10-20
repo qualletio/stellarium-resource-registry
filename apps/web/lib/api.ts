@@ -27,6 +27,7 @@ export function searchParamsFor(query: SearchQuery): URLSearchParams {
   if (query.in && query.in !== 'all') params.set('in', query.in);
   if (query.paid) params.set('paid', 'true');
   if (query.restricted) params.set('restricted', 'true');
+  if (query.inference) params.set('inference', 'true');
   if (query.offset) params.set('offset', String(query.offset));
   if (query.limit) params.set('limit', String(query.limit));
   return params;

@@ -55,7 +55,8 @@
 .badgeFree,
 .badgePaid,
 .badgeOpen,
-.badgeRestricted {
+.badgeRestricted,
+.badgeInference {
   font-size: 12px;
   padding: 0 6px;
   border: 1px solid currentColor;
@@ -74,6 +75,10 @@
 .badgeRestricted {
   color: var(--danger);
   background: var(--danger-dim);
+}
+
+.badgeInference {
+  color: var(--cyan);
 }
 
 .description {
@@ -124,6 +129,10 @@
 
 .amber {
   color: var(--amber);
+}
+
+.cyan {
+  color: var(--cyan);
 }
 
 .ok {

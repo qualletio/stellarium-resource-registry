@@ -20,6 +20,10 @@
   color: var(--amber);
 }
 
+.line .cyan {
+  color: var(--cyan);
+}
+
 .line .danger {
   color: var(--danger);
 }

@@ -19,6 +19,7 @@ interface SearchQuerystring {
     in: SearchField;
     paid: boolean;
     restricted: boolean;
+    inference: boolean;
     offset: number;
     limit: number;
 }
@@ -30,6 +31,7 @@ const searchQuerySchema = {
         in: { type: 'string', enum: SEARCH_FIELDS, default: 'all' },
         paid: { type: 'boolean', default: false },
         restricted: { type: 'boolean', default: false },
+        inference: { type: 'boolean', default: false },
         offset: { type: 'integer', minimum: 0, default: 0 },
         limit: { type: 'integer', minimum: 1, maximum: MAX_PAGE_SIZE, default: DEFAULT_PAGE_SIZE },
     },

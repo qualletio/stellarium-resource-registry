@@ -14,6 +14,8 @@ export interface SearchQuery {
     paid?: boolean;
     /** Only resources with at least one restricted function. */
     restricted?: boolean;
+    /** Only resources with at least one inference function. */
+    inference?: boolean;
     offset?: number;
     limit?: number;
 }
@@ -40,10 +42,14 @@ export interface ResourceSummary {
     functionCount: number;
     /** Names of the functions that matched the search. Empty when the match was on path or name. */
     matchedFunctions: string[];
-    /** Null when every function is free. */
+    /** Per-call prices of the fixed functions. Null when none is paid. */
     price: PriceRange | null;
+    /** Paid functions of either kind. */
     paidFunctionCount: number;
+    /** Paid inference functions, priced per token rather than per call, so not in `price`. */
+    perTokenFunctionCount: number;
     restrictedFunctionCount: number;
+    inferenceFunctionCount: number;
     lastSeenAt: string;
     /** Set when the source node stopped listing the resource. */
     removedAt: string | null;
@@ -55,11 +61,28 @@ export interface FunctionParameter {
     description: string | null;
 }
 
-/** A function's `paymentManifest`, as the hosting node publishes it. */
-export interface PaymentManifest {
+/** A fixed function's `paymentManifest`: a flat price per call. */
+export interface FixedPaymentManifest {
     costMicroUsdc: number;
     recipientAddress: string;
 }
+
+/** An inference function's `paymentManifest`: rates per million tokens. Either may be 0. */
+export interface InferencePaymentManifest {
+    inputCostMicroUsdcPerMillionTokens: number;
+    outputCostMicroUsdcPerMillionTokens: number;
+    recipientAddress: string;
+}
+
+/** A function's `paymentManifest`, as the hosting node publishes it. Its shape follows the function's `kind`. */
+export type PaymentManifest = FixedPaymentManifest | InferencePaymentManifest;
+
+export const FUNCTION_KINDS = ['fixed', 'inference'] as const;
+/** Fixed functions have a flat price. Inference functions run AI inference, take `maxTokens` and are priced per token. */
+export type FunctionKind = typeof FUNCTION_KINDS[number];
+
+export const isInferenceManifest = (manifest: PaymentManifest): manifest is InferencePaymentManifest =>
+    'inputCostMicroUsdcPerMillionTokens' in manifest;
 
 export interface ResourceFunction {
     name: string;
@@ -70,6 +93,7 @@ export interface ResourceFunction {
     paymentManifest: PaymentManifest | null;
     /** Callers need a grant from the hosting node. */
     restricted: boolean;
+    kind: FunctionKind;
 }
 
 export interface NodeInfo {
@@ -124,6 +148,7 @@ export interface Stats {
     functions: number;
     paidFunctions: number;
     restrictedFunctions: number;
+    inferenceFunctions: number;
     nodes: number;
     sourceUrl: string;
     lastSync: SyncRun | null;

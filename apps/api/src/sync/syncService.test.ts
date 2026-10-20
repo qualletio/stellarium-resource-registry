@@ -56,7 +56,7 @@ describe('SyncService against a real stellarium-ts node', () => {
     it('stores every resource with its functions, parameters, prices and restrictions', async () => {
         const node = await startSource({ resources: SOURCE_RESOURCES });
         const run = await service.sync();
-        expect(run).toMatchObject({ status: 'succeeded', resourcesSeen: 4, resourcesAdded: 4, resourcesRemoved: 0 });
+        expect(run).toMatchObject({ status: 'succeeded', resourcesSeen: 5, resourcesAdded: 5, resourcesRemoved: 0 });
 
         const detail = await repository.getResource('io.quallet.finance.Ledger');
         expect(detail?.functions).toEqual([
@@ -67,6 +67,7 @@ describe('SyncService against a real stellarium-ts node', () => {
                 parameters: [{ name: 'account', type: 'string', description: 'The account ID.' }],
                 paymentManifest: null,
                 restricted: true,
+                kind: 'fixed',
             },
             {
                 name: 'transfer',
@@ -79,14 +80,26 @@ describe('SyncService against a real stellarium-ts node', () => {
                 ],
                 paymentManifest: { costMicroUsdc: 5_000, recipientAddress: SAMPLE_RECIPIENT },
                 restricted: true,
+                kind: 'fixed',
             },
-            { name: 'rates', returnType: 'string', description: 'Current exchange rates as JSON.', parameters: [], paymentManifest: null, restricted: false },
+            { name: 'rates', returnType: 'string', description: 'Current exchange rates as JSON.', parameters: [], paymentManifest: null, restricted: false, kind: 'fixed' },
         ]);
         expect(detail).toMatchObject({
             website: 'https://ledger.example.com',
             description: 'Account balances and transfers. Balance and transfer calls need a grant.',
         });
         expect(detail?.host).toMatchObject({ baseUrl: node.baseUrl, publicKey: node.publicKey, isSource: true });
+
+        const assistant = await repository.getResource('ai.example.Assistant');
+        expect(assistant?.functions).toMatchObject([
+            {
+                name: 'complete',
+                kind: 'inference',
+                parameters: [{ name: 'prompt' }, { name: 'maxTokens', type: 'int32', description: 'The most output tokens to generate.' }],
+                paymentManifest: { inputCostMicroUsdcPerMillionTokens: 3_000_000, outputCostMicroUsdcPerMillionTokens: 15_000_000, recipientAddress: SAMPLE_RECIPIENT },
+            },
+            { name: 'summarize', kind: 'inference', paymentManifest: null },
+        ]);
     });
 
     it('marks resources the node stops listing as removed, and restores them when listed again', async () => {
@@ -96,7 +109,7 @@ describe('SyncService against a real stellarium-ts node', () => {
         await startSource({ resources: [weather] });
         expect(await service.sync()).toMatchObject({ resourcesSeen: 1, resourcesAdded: 0, resourcesRemoved: 1 });
         expect((await repository.getResource('io.example.Ledger'))?.removedAt).not.toBeNull();
-        const live = await repository.search({ in: 'all', paid: false, restricted: false, offset: 0, limit: 10 });
+        const live = await repository.search({ in: 'all', paid: false, restricted: false, inference: false, offset: 0, limit: 10 });
         expect(live.items.map((r) => r.fqn)).toEqual(['com.example.Weather']);
 
         await startSource({ resources: [weather, ledger] });
@@ -114,7 +127,7 @@ describe('SyncService against a real stellarium-ts node', () => {
         await startSource({ resources: [{ ...weather, functions: [paid('temperature', 'city: string', 'int32', 20_000)] }, ledger] });
         await service.sync();
         const detail = await repository.getResource('com.example.Weather');
-        expect(detail?.functions.map((fn) => [fn.name, fn.paymentManifest?.costMicroUsdc])).toEqual([['temperature', 20_000]]);
+        expect(detail?.functions.map((fn) => [fn.name, fn.paymentManifest])).toEqual([['temperature', { costMicroUsdc: 20_000, recipientAddress: SAMPLE_RECIPIENT }]]);
     });
 
     it('updates descriptions and websites when the node changes them', async () => {
@@ -128,7 +141,7 @@ describe('SyncService against a real stellarium-ts node', () => {
         const detail = await repository.getResource('com.example.Weather');
         expect(detail).toMatchObject({ website: 'https://weather.example', description: 'Forecasts' });
         expect(detail?.functions[0]).toMatchObject({ description: 'Degrees Celsius', parameters: [{ name: 'city', description: 'A city name' }] });
-        expect((await repository.search({ in: 'all', paid: false, restricted: false, offset: 0, limit: 10 })).items[0].description).toBe('Forecasts');
+        expect((await repository.search({ in: 'all', paid: false, restricted: false, inference: false, offset: 0, limit: 10 })).items[0].description).toBe('Forecasts');
 
         await startSource({ resources: [weather] });
         await service.sync();
@@ -164,11 +177,18 @@ describe('SyncService against a real stellarium-ts node', () => {
         const source = await startNode({ resources: SOURCE_RESOURCES, approveGrants: true, startingPeer: peer.baseUrl, port });
         nodes = [peer, source];
 
-        expect(await service.sync()).toMatchObject({ status: 'succeeded', resourcesSeen: 6 });
-        expect((await repository.getResource('org.archive.Library'))?.baseUrl).toBe(peer.baseUrl);
+        expect(await service.sync()).toMatchObject({ status: 'succeeded', resourcesSeen: 7 });
+        const library = await repository.getResource('org.archive.Library');
+        expect(library?.baseUrl).toBe(peer.baseUrl);
+        // Learned through the source, so the kind and per-token rates survive the peer broadcast.
+        expect(library?.functions.find((fn) => fn.name === 'ask')).toMatchObject({
+            kind: 'inference',
+            restricted: true,
+            paymentManifest: { inputCostMicroUsdcPerMillionTokens: 1_000_000, outputCostMicroUsdcPerMillionTokens: 0 },
+        });
 
         const byUrl = new Map((await repository.getNodes()).map((node) => [node.baseUrl, node]));
-        expect(byUrl.get(source.baseUrl)).toMatchObject({ isSource: true, resourceCount: 4, acceptsGrantRequests: true });
+        expect(byUrl.get(source.baseUrl)).toMatchObject({ isSource: true, resourceCount: 5, acceptsGrantRequests: true });
         expect(byUrl.get(peer.baseUrl)).toMatchObject({ isSource: false, resourceCount: 2, publicKey: peer.publicKey, acceptsGrantRequests: false });
         expect([...source.executed, ...peer.executed]).toEqual([]);
     });

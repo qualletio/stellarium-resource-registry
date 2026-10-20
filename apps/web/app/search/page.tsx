@@ -15,7 +15,7 @@ type Params = Record<string, string | string[] | undefined>;
 
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
-function parseQuery(params: Params): Required<Pick<SearchQuery, 'in' | 'paid' | 'restricted' | 'offset'>> & { q: string } {
+function parseQuery(params: Params): Required<Pick<SearchQuery, 'in' | 'paid' | 'restricted' | 'inference' | 'offset'>> & { q: string } {
   const field = first(params.in);
   const offset = Number(first(params.offset));
   return {
@@ -23,6 +23,7 @@ function parseQuery(params: Params): Required<Pick<SearchQuery, 'in' | 'paid' | 
     in: SEARCH_FIELDS.includes(field as SearchField) ? (field as SearchField) : 'all',
     paid: first(params.paid) === 'true',
     restricted: first(params.restricted) === 'true',
+    inference: first(params.inference) === 'true',
     offset: Number.isInteger(offset) && offset > 0 ? offset : 0,
   };
 }
@@ -33,6 +34,7 @@ function commandFor(query: ReturnType<typeof parseQuery>): string {
   if (query.in !== 'all') parts.push(`--in=${query.in}`);
   if (query.paid) parts.push('--paid');
   if (query.restricted) parts.push('--restricted');
+  if (query.inference) parts.push('--inference');
   return parts.join(' ');
 }
 

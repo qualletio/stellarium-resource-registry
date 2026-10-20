@@ -10,6 +10,9 @@ export const formatUsdc = (microUsdc: number) => `${usdcFormat.format(microUsdc 
 
 export const formatMicroUsdc = (microUsdc: number) => `${microUsdcFormat.format(microUsdc)} micro-USDC`;
 
+/** A sample `maxTokens` for usage examples. The node refuses 0. */
+const EXAMPLE_MAX_TOKENS = 1024;
+
 /** "12s ago", "3m ago", "5h ago", "2d ago". */
 export function timeAgo(iso: string, now = Date.now()): string {
   const seconds = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
@@ -42,7 +45,9 @@ const pascal = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
 /** A RequestScript request that calls one function. */
 export function requestScriptExample(path: string, name: string, fn: ResourceFunction): string {
   const binding = name.charAt(0).toLowerCase() + name.slice(1);
-  const args = fn.parameters.map((p) => `${p.name}: ${exampleValue(p)}`).join(', ');
+  const args = fn.parameters
+    .map((p) => `${p.name}: ${fn.kind === 'inference' && p.name === 'maxTokens' ? EXAMPLE_MAX_TOKENS : exampleValue(p)}`)
+    .join(', ');
   return [
     `request ${pascal(name)}${pascal(fn.name)} {`,
     `  const ${binding}: ${path}.${name}`,

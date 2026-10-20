@@ -1,5 +1,5 @@
 // Real stellarium-ts nodes for the local node apps and the API's tests, plus sample resources
-// that cover every combination the registry shows: free and paid, open and restricted.
+// that cover every combination the registry shows: free and paid, open and restricted, fixed and inference.
 import { generateKeyPairSync } from 'node:crypto';
 import { createServer } from 'node:net';
 import Fastify from 'fastify';
@@ -31,6 +31,21 @@ export const open = (name: string, parameters: string, returnType: string): Func
 /** Costs `costMicroUsdc` per call, paid to `SAMPLE_RECIPIENT`. */
 export const paid = (name: string, parameters: string, returnType: string, costMicroUsdc: number): FunctionSpec =>
     ({ ...open(name, parameters, returnType), paymentManifest: { costMicroUsdc, recipientAddress: SAMPLE_RECIPIENT } });
+
+/**
+ * `inference('complete', 'prompt: string', 'string')`: free, priced per token with `perToken`.
+ * Takes a `maxTokens: int32` parameter after the others, as every inference function must.
+ */
+export const inference = (name: string, parameters: string, returnType: string): FunctionSpec =>
+    ({ ...open(name, parameters ? `${parameters}, maxTokens: int32` : 'maxTokens: int32', returnType), kind: 'inference' });
+
+/** Prices an inference function per million input and output tokens, paid to `SAMPLE_RECIPIENT`. */
+export const perToken = (fn: FunctionSpec, inputCostMicroUsdcPerMillionTokens: number, outputCostMicroUsdcPerMillionTokens: number): FunctionSpec => ({
+    ...fn,
+    paymentManifest: { inputCostMicroUsdcPerMillionTokens, outputCostMicroUsdcPerMillionTokens, recipientAddress: SAMPLE_RECIPIENT },
+    // Required on a paid inference function. The registry never calls one, so nothing is counted.
+    estimateInputTokens: async () => 0,
+});
 
 /** Callers need a grant from the hosting node. */
 export const restricted = (fn: FunctionSpec): FunctionSpec => ({ ...fn, restricted: true });
@@ -66,6 +81,13 @@ export const SOURCE_RESOURCES: ResourceSpec[] = [
         described(paid('lookup', 'address: string', 'string', 1_000), 'The coordinates of an address, as "lat,lon".', { address: 'A street address, such as "1 Main St, Springfield".' }),
         described(paid('reverse', 'lat: float64, lon: float64', 'string', 1_000), 'The nearest street address to a point.', { lat: 'Latitude, in degrees.', lon: 'Longitude, in degrees.' }),
     ] },
+    { path: 'ai.example', name: 'Assistant', website: 'https://assistant.example.com', description: 'Text generation, priced per token.', functions: [
+        described(perToken(inference('complete', 'prompt: string', 'string'), 3_000_000, 15_000_000), 'Continues the prompt.', {
+            prompt: 'The text to continue.',
+            maxTokens: 'The most output tokens to generate.',
+        }),
+        described(inference('summarize', 'text: string', 'string'), 'A short summary of the text.', { text: 'The text to summarize.', maxTokens: 'The most output tokens to generate.' }),
+    ] },
 ];
 
 /** Resources for a peer of the source node. Its host does not issue grants on request. */
@@ -74,6 +96,12 @@ export const PEER_RESOURCES: ResourceSpec[] = [
         described(open('search', 'query: string, limit: int32', '[]string'), 'Book IDs matching a title or author.', { query: 'Words from a title or author.', limit: 'The most results to return.' }),
         restricted(described(open('checkout', 'bookId: string', 'boolean'), 'Checks out a book. Returns false when it is already out.', { bookId: 'A book ID from search.' })),
         described(paid('scan', 'bookId: string, page: int32', 'string', 7_500), 'The text of one scanned page.', { bookId: 'A book ID from search.', page: 'The page number, from 1.' }),
+        // Output is free: callers pay only for the book text they send.
+        restricted(described(perToken(inference('ask', 'bookId: string, question: string', 'string'), 1_000_000, 0), 'Answers a question about a book.', {
+            bookId: 'A book ID from search.',
+            question: 'What to ask about the book.',
+            maxTokens: 'The most output tokens in the answer.',
+        })),
     ] },
     { path: 'org.archive.internal', name: 'Admin', description: 'Maintenance tasks for the library\'s operators.', functions: [
         restricted(described(open('purge', 'olderThanDays: int32', 'int32'), 'Deletes expired checkouts. Returns how many it deleted.', { olderThanDays: 'Only checkouts that expired more than this many days ago.' })),
@@ -139,7 +167,8 @@ export async function startNode(options: StartNodeOptions): Promise<RunningNode>
                 ...fn,
                 exec: async () => {
                     executed.push(`${spec.path}.${spec.name}.${fn.name}`);
-                    return null;
+                    // An inference function reports the tokens it used alongside its value.
+                    return fn.kind === 'inference' ? { value: null, usage: { inputTokens: 0, outputTokens: 0 } } : null;
                 },
             })),
         };

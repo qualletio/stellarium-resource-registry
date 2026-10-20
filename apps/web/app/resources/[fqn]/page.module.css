@@ -70,6 +70,10 @@
   color: var(--amber);
 }
 
+.cyan {
+  color: var(--cyan);
+}
+
 .danger {
   color: var(--danger);
 }
