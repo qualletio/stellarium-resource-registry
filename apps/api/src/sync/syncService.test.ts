@@ -77,7 +77,7 @@ describe('SyncService against a real stellarium-ts node', () => {
                     { name: 'to', type: 'string', description: 'The account to credit.' },
                     { name: 'amount', type: 'int64', description: 'How much to move, in lamports.' },
                 ],
-                paymentManifest: { costLamports: 5_000, recipientAddress: SAMPLE_RECIPIENT },
+                paymentManifest: { costMicroUsdc: 5_000, recipientAddress: SAMPLE_RECIPIENT },
                 restricted: true,
             },
             { name: 'rates', returnType: 'string', description: 'Current exchange rates as JSON.', parameters: [], paymentManifest: null, restricted: false },
@@ -114,7 +114,7 @@ describe('SyncService against a real stellarium-ts node', () => {
         await startSource({ resources: [{ ...weather, functions: [paid('temperature', 'city: string', 'int32', 20_000)] }, ledger] });
         await service.sync();
         const detail = await repository.getResource('com.example.Weather');
-        expect(detail?.functions.map((fn) => [fn.name, fn.paymentManifest?.costLamports])).toEqual([['temperature', 20_000]]);
+        expect(detail?.functions.map((fn) => [fn.name, fn.paymentManifest?.costMicroUsdc])).toEqual([['temperature', 20_000]]);
     });
 
     it('updates descriptions and websites when the node changes them', async () => {

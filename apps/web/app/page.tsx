@@ -75,7 +75,7 @@ export default async function HomePage() {
           </dd>
           <dt>paid</dt>
           <dd>
-            A function with a <code>paymentManifest</code> costs a fixed number of lamports per call. Your node pays it with a signed
+            A function with a <code>paymentManifest</code> costs a fixed amount of USDC per call. Your node pays it with a signed
             voucher, settled on Solana from your escrow.
           </dd>
           <dt>restricted</dt>

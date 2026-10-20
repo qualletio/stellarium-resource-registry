@@ -47,7 +47,7 @@ export const resourceFunctionsTable = pgTable("resource_functions", {
   description: text(),
   restricted: boolean().notNull().default(false),
   // The function's paymentManifest. Both are null for a free function.
-  costLamports: bigint("cost_lamports", { mode: 'number' }),
+  costMicroUsdc: bigint("cost_micro_usdc", { mode: 'number' }),
   recipientAddress: varchar("recipient_address", { length: 64 }),
   // Order the node listed the function in.
   position: integer().notNull(),

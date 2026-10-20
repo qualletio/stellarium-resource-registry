@@ -109,10 +109,10 @@ export class RegistryRepository {
             from resources r
             cross join lateral (
                 select count(*) as function_count,
-                       count(f.cost_lamports) as paid_count,
+                       count(f.cost_micro_usdc) as paid_count,
                        count(*) filter (where f.restricted) as restricted_count,
-                       min(f.cost_lamports) as min_cost,
-                       max(f.cost_lamports) as max_cost,
+                       min(f.cost_micro_usdc) as min_cost,
+                       max(f.cost_micro_usdc) as max_cost,
                        ${matchesFunctions
                            ? sql`array_agg(f.name order by f.position) filter (where f.name ilike ${pattern})`
                            : sql`null::text[]`} as matched
@@ -133,7 +133,7 @@ export class RegistryRepository {
                 description: row.description,
                 functionCount: Number(row.function_count),
                 matchedFunctions: row.matched ?? [],
-                price: row.min_cost === null || row.max_cost === null ? null : { minLamports: Number(row.min_cost), maxLamports: Number(row.max_cost) },
+                price: row.min_cost === null || row.max_cost === null ? null : { minMicroUsdc: Number(row.min_cost), maxMicroUsdc: Number(row.max_cost) },
                 paidFunctionCount: Number(row.paid_count),
                 restrictedFunctionCount: Number(row.restricted_count),
                 lastSeenAt: iso(row.last_seen_at) as string,
@@ -172,9 +172,9 @@ export class RegistryRepository {
                 returnType: fn.returnType,
                 description: fn.description,
                 parameters: parameters.filter((p) => p.functionId === fn.id).map((p) => ({ name: p.name, type: p.type, description: p.description })),
-                paymentManifest: fn.costLamports === null || fn.recipientAddress === null
+                paymentManifest: fn.costMicroUsdc === null || fn.recipientAddress === null
                     ? null
-                    : { costLamports: fn.costLamports, recipientAddress: fn.recipientAddress },
+                    : { costMicroUsdc: fn.costMicroUsdc, recipientAddress: fn.recipientAddress },
                 restricted: fn.restricted,
             })),
             host: row.nodes ? toNodeInfo(row.nodes) : null,
@@ -207,7 +207,7 @@ export class RegistryRepository {
             select
                 (select count(*) from resources where removed_at is null) as resources,
                 count(f.id) as functions,
-                count(f.cost_lamports) as paid_functions,
+                count(f.cost_micro_usdc) as paid_functions,
                 count(*) filter (where f.restricted) as restricted_functions,
                 (select count(*) from nodes) as nodes
             from resource_functions f

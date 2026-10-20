@@ -181,7 +181,7 @@ export class SyncService {
             returnType: fn.returnType,
             description: fn.description ?? null,
             restricted: fn.restricted,
-            costLamports: fn.paymentManifest?.costLamports ?? null,
+            costMicroUsdc: fn.paymentManifest?.costMicroUsdc ?? null,
             recipientAddress: fn.paymentManifest?.recipientAddress ?? null,
             position,
         }))).returning({ id: resourceFunctionsTable.id, name: resourceFunctionsTable.name });

@@ -6,7 +6,7 @@ import { CopyButton } from '@/components/CopyButton';
 import { FunctionCard } from '@/components/FunctionCard';
 import terminal from '@/components/Terminal.module.css';
 import { getResource } from '@/lib/api';
-import { formatDate, formatLamports, timeAgo } from '@/lib/format';
+import { formatDate, formatUsdc, timeAgo } from '@/lib/format';
 import { pageMetadata } from '@/lib/site';
 import styles from './page.module.css';
 
@@ -23,13 +23,13 @@ async function fqnFrom(params: Props['params']): Promise<string> {
 
 /** One line for search results: how many functions, what they cost, and who may call them. */
 function summarize(resource: ResourceDetail): string {
-  const costs = resource.functions.flatMap((fn) => (fn.paymentManifest ? [fn.paymentManifest.costLamports] : []));
+  const costs = resource.functions.flatMap((fn) => (fn.paymentManifest ? [fn.paymentManifest.costMicroUsdc] : []));
   const restricted = resource.functions.filter((fn) => fn.restricted).length;
   const count = `${resource.functions.length} function${resource.functions.length === 1 ? '' : 's'}`;
   const price =
     costs.length === 0
       ? 'all free'
-      : `${costs.length} paid, from ${formatLamports(Math.min(...costs))} per call`;
+      : `${costs.length} paid, from ${formatUsdc(Math.min(...costs))} per call`;
   const access = restricted === 0 ? 'all open to any caller' : `${restricted} restricted to grant holders`;
   const names = resource.functions.slice(0, 5).map((fn) => `${fn.name}()`);
   const more = resource.functions.length > names.length ? ', …' : '';
@@ -54,7 +54,7 @@ export default async function ResourcePage({ params }: Props) {
 
   const paid = resource.functions.filter((fn) => fn.paymentManifest);
   const restricted = resource.functions.filter((fn) => fn.restricted).length;
-  const costs = paid.map((fn) => fn.paymentManifest?.costLamports ?? 0);
+  const costs = paid.map((fn) => fn.paymentManifest?.costMicroUsdc ?? 0);
 
   return (
     <>
@@ -98,8 +98,8 @@ export default async function ResourcePage({ params }: Props) {
           {costs.length === 0
             ? 'free'
             : Math.min(...costs) === Math.max(...costs)
-              ? `${formatLamports(costs[0])} per call`
-              : `${formatLamports(Math.min(...costs))} – ${formatLamports(Math.max(...costs))} per call`}
+              ? `${formatUsdc(costs[0])} per call`
+              : `${formatUsdc(Math.min(...costs))} – ${formatUsdc(Math.max(...costs))} per call`}
         </dd>
         <dt>grants</dt>
         <dd>

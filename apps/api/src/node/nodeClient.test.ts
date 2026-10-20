@@ -6,7 +6,7 @@ const valid = {
     name: 'Weather',
     baseUrl: 'http://node.example/',
     functions: [
-        { name: 'temperature', returnType: 'int32', parameters: [{ name: 'city', type: 'string' }], paymentManifest: { costLamports: 10, recipientAddress: 'addr' }, restricted: true },
+        { name: 'temperature', returnType: 'int32', parameters: [{ name: 'city', type: 'string' }], paymentManifest: { costMicroUsdc: 10, recipientAddress: 'addr' }, restricted: true },
     ],
 };
 
@@ -16,7 +16,7 @@ describe('parseResource', () => {
             path: 'com.example',
             name: 'Weather',
             baseUrl: 'http://node.example',
-            functions: [{ name: 'temperature', returnType: 'int32', parameters: [{ name: 'city', type: 'string' }], paymentManifest: { costLamports: 10, recipientAddress: 'addr' }, restricted: true }],
+            functions: [{ name: 'temperature', returnType: 'int32', parameters: [{ name: 'city', type: 'string' }], paymentManifest: { costMicroUsdc: 10, recipientAddress: 'addr' }, restricted: true }],
         });
     });
 
@@ -38,8 +38,9 @@ describe('parseResource', () => {
     it.each([
         ['a non-http base URL', { ...valid, baseUrl: 'file:///etc/passwd' }],
         ['a missing path', { ...valid, path: '' }],
-        ['a negative price', { ...valid, functions: [{ ...valid.functions[0], paymentManifest: { costLamports: -1, recipientAddress: 'addr' } }] }],
-        ['a fractional price', { ...valid, functions: [{ ...valid.functions[0], paymentManifest: { costLamports: 1.5, recipientAddress: 'addr' } }] }],
+        ['a negative price', { ...valid, functions: [{ ...valid.functions[0], paymentManifest: { costMicroUsdc: -1, recipientAddress: 'addr' } }] }],
+        ['a fractional price', { ...valid, functions: [{ ...valid.functions[0], paymentManifest: { costMicroUsdc: 1.5, recipientAddress: 'addr' } }] }],
+        ['a lamport price from a pre-USDC node', { ...valid, functions: [{ ...valid.functions[0], paymentManifest: { costLamports: 10, recipientAddress: 'addr' } }] }],
         ['a malformed parameter', { ...valid, functions: [{ ...valid.functions[0], parameters: [{ name: 'city' }] }] }],
         ['a duplicate function', { ...valid, functions: [valid.functions[0], valid.functions[0]] }],
         ['a javascript: website', { ...valid, website: 'javascript:alert(1)' }],

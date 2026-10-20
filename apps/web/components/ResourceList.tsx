@@ -1,14 +1,14 @@
 import type { ResourceSummary } from '@registry/types';
 import Link from 'next/link';
-import { formatLamports, timeAgo } from '@/lib/format';
+import { formatUsdc, timeAgo } from '@/lib/format';
 import { AccessIcon } from './AccessIcon';
 import { Highlight } from './Highlight';
 import styles from './ResourceList.module.css';
 
 function priceLabel(resource: ResourceSummary): string {
   if (!resource.price) return 'free';
-  const { minLamports, maxLamports } = resource.price;
-  const range = minLamports === maxLamports ? formatLamports(minLamports) : `${formatLamports(minLamports)}–${formatLamports(maxLamports).replace(' lamports', '')}`;
+  const { minMicroUsdc, maxMicroUsdc } = resource.price;
+  const range = minMicroUsdc === maxMicroUsdc ? formatUsdc(minMicroUsdc) : `${formatUsdc(minMicroUsdc).replace(' USDC', '')}–${formatUsdc(maxMicroUsdc)}`;
   return resource.paidFunctionCount < resource.functionCount ? `free / ${range}` : range;
 }
 

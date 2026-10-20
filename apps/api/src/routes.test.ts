@@ -50,7 +50,7 @@ describe('routes', () => {
     it('ranks an exact name above prefix and substring matches', async () => {
         const { body } = await get('/v1/resources?q=weather');
         expect(body.items.map((r: { fqn: string }) => r.fqn)).toEqual(['com.example.Weather', 'com.example.weather.Radar']);
-        expect(body.items[0]).toMatchObject({ functionCount: 2, paidFunctionCount: 2, price: { minLamports: 2_500, maxLamports: 10_000 } });
+        expect(body.items[0]).toMatchObject({ functionCount: 2, paidFunctionCount: 2, price: { minMicroUsdc: 2_500, maxMicroUsdc: 10_000 } });
     });
 
     it('searches by path, name or function name', async () => {

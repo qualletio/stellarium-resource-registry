@@ -21,7 +21,7 @@ export interface NodeFunction {
     returnType: string;
     description?: string;
     parameters: { name: string; type: string; description?: string }[];
-    paymentManifest?: { costLamports: number; recipientAddress: string };
+    paymentManifest?: { costMicroUsdc: number; recipientAddress: string };
     restricted: boolean;
 }
 
@@ -113,10 +113,10 @@ function parseFunction(value: unknown): NodeFunction | undefined {
     let paymentManifest: NodeFunction['paymentManifest'];
     if (value.paymentManifest !== undefined && value.paymentManifest !== null) {
         const manifest = value.paymentManifest;
-        if (!isObject(manifest) || !Number.isSafeInteger(manifest.costLamports) || (manifest.costLamports as number) < 0 || !isNonEmptyString(manifest.recipientAddress)) {
+        if (!isObject(manifest) || !Number.isSafeInteger(manifest.costMicroUsdc) || (manifest.costMicroUsdc as number) < 0 || !isNonEmptyString(manifest.recipientAddress)) {
             return undefined;
         }
-        paymentManifest = { costLamports: manifest.costLamports as number, recipientAddress: manifest.recipientAddress };
+        paymentManifest = { costMicroUsdc: manifest.costMicroUsdc as number, recipientAddress: manifest.recipientAddress };
     }
 
     return {

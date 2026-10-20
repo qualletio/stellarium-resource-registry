@@ -45,6 +45,7 @@ services:
     environment:
       BASE_URL: http://local-source-node:3100
       STARTING_PEER: http://local-peer-node:3101
+      API_KEY: local-api-key
     ports:
       - "127.0.0.1:3100:3100"
     depends_on:

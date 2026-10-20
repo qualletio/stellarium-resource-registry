@@ -28,9 +28,9 @@ const params = (spec: string) =>
 export const open = (name: string, parameters: string, returnType: string): FunctionSpec =>
     ({ name, parameters: params(parameters), returnType });
 
-/** Costs `costLamports` per call, paid to `SAMPLE_RECIPIENT`. */
-export const paid = (name: string, parameters: string, returnType: string, costLamports: number): FunctionSpec =>
-    ({ ...open(name, parameters, returnType), paymentManifest: { costLamports, recipientAddress: SAMPLE_RECIPIENT } });
+/** Costs `costMicroUsdc` per call, paid to `SAMPLE_RECIPIENT`. */
+export const paid = (name: string, parameters: string, returnType: string, costMicroUsdc: number): FunctionSpec =>
+    ({ ...open(name, parameters, returnType), paymentManifest: { costMicroUsdc, recipientAddress: SAMPLE_RECIPIENT } });
 
 /** Callers need a grant from the hosting node. */
 export const restricted = (fn: FunctionSpec): FunctionSpec => ({ ...fn, restricted: true });

@@ -1,5 +1,5 @@
 import type { NodeInfo, ResourceFunction } from '@registry/types';
-import { capabilityExample, formatLamports, formatSol, requestScriptExample } from '@/lib/format';
+import { capabilityExample, formatMicroUsdc, formatUsdc, requestScriptExample } from '@/lib/format';
 import { CopyButton } from './CopyButton';
 import styles from './FunctionCard.module.css';
 
@@ -74,8 +74,8 @@ export function FunctionCard({ path, name, fn, host }: Props) {
         <dd>
           {fn.paymentManifest ? (
             <>
-              <span className={styles.amber}>{formatLamports(fn.paymentManifest.costLamports)}</span>{' '}
-              <span className={styles.muted}>({formatSol(fn.paymentManifest.costLamports)}) per call</span>
+              <span className={styles.amber}>{formatUsdc(fn.paymentManifest.costMicroUsdc)}</span>{' '}
+              <span className={styles.muted}>({formatMicroUsdc(fn.paymentManifest.costMicroUsdc)}) per call</span>
             </>
           ) : (
             <span className={styles.muted}>free: no paymentManifest</span>
@@ -130,7 +130,7 @@ export function FunctionCard({ path, name, fn, host }: Props) {
         )}
         {fn.paymentManifest && (
           <p className={styles.note}>
-            Your node signs a payment voucher for {formatLamports(fn.paymentManifest.costLamports)} with each call. The operator settles it
+            Your node signs a payment voucher for {formatUsdc(fn.paymentManifest.costMicroUsdc)} with each call. The operator settles it
             from your escrow: 80% to the recipient, 20% protocol fee.
           </p>
         )}

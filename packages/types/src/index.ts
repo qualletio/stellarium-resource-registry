@@ -1,6 +1,6 @@
 /**
  * The registry API's wire types, shared by `apps/api` (which produces them) and `apps/web` (which reads them).
- * Timestamps are ISO 8601 strings. Prices are lamports.
+ * Timestamps are ISO 8601 strings. Prices are integer micro-USDC (1 USDC = 1,000,000).
  */
 
 /** Which fields a search matches against. */
@@ -25,8 +25,8 @@ export interface Page<T> {
 }
 
 export interface PriceRange {
-    minLamports: number;
-    maxLamports: number;
+    minMicroUsdc: number;
+    maxMicroUsdc: number;
 }
 
 export interface ResourceSummary {
@@ -57,7 +57,7 @@ export interface FunctionParameter {
 
 /** A function's `paymentManifest`, as the hosting node publishes it. */
 export interface PaymentManifest {
-    costLamports: number;
+    costMicroUsdc: number;
     recipientAddress: string;
 }
 

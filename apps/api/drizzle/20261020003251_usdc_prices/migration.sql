@@ -1,0 +1,1 @@
+ALTER TABLE "resource_functions" RENAME COLUMN "cost_lamports" TO "cost_micro_usdc";

@@ -1,13 +1,14 @@
 import type { FunctionParameter, ResourceFunction } from '@registry/types';
 
-export const LAMPORTS_PER_SOL = 1_000_000_000;
+export const MICRO_USDC_PER_USDC = 1_000_000;
 
-const lamportFormat = new Intl.NumberFormat('en-US');
-const solFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 9 });
+const microUsdcFormat = new Intl.NumberFormat('en-US');
+const usdcFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
 
-export const formatLamports = (lamports: number) => `${lamportFormat.format(lamports)} lamports`;
+/** `10,000` → "0.01 USDC". */
+export const formatUsdc = (microUsdc: number) => `${usdcFormat.format(microUsdc / MICRO_USDC_PER_USDC)} USDC`;
 
-export const formatSol = (lamports: number) => `${solFormat.format(lamports / LAMPORTS_PER_SOL)} SOL`;
+export const formatMicroUsdc = (microUsdc: number) => `${microUsdcFormat.format(microUsdc)} micro-USDC`;
 
 /** "12s ago", "3m ago", "5h ago", "2d ago". */
 export function timeAgo(iso: string, now = Date.now()): string {
