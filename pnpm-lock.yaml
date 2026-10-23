@@ -300,8 +300,8 @@ importers:
         specifier: ^5.12.7
         version: 5.12.7
       stellarium-ts:
-        specifier: 0.16.0
-        version: 0.16.0(@electric-sql/pglite@0.5.10)(@types/pg@8.23.1)
+        specifier: 0.17.0
+        version: 0.17.0(@electric-sql/pglite@0.5.10)(@types/pg@8.23.1)
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.5.15
@@ -2241,8 +2241,8 @@ packages:
   std-env@4.3.0:
     resolution: {integrity: sha512-OtU/EgQ1kIm5KwqQpBC6ZEMXrZRui11w8zgfTWp8cdO9B8OaPsbA8bTHO2P+HNo1VlUTGMVBwPhydu6poeXiag==}
 
-  stellarium-ts@0.16.0:
-    resolution: {integrity: sha512-+8/tsNN1TgTZa49Ggfgg0gxsk73MGooHRijum84SDgE+VYDN67x+y9Khl3TkoZU9u9vhOQgNOTqm7lgQXqWE6A==}
+  stellarium-ts@0.17.0:
+    resolution: {integrity: sha512-ur8CrSDZcwfxxKQ+Vfs4gWu5StW3tf1dn4sDtUJRkRiYRI943bY+W2B0uZMGuzjqrm5rE/5HPBRV/7/xKqdXCg==}
     engines: {node: '>=20'}
 
   string_decoder@1.3.0:
@@ -4008,7 +4008,7 @@ snapshots:
 
   std-env@4.3.0: {}
 
-  stellarium-ts@0.16.0(@electric-sql/pglite@0.5.10)(@types/pg@8.23.1):
+  stellarium-ts@0.17.0(@electric-sql/pglite@0.5.10)(@types/pg@8.23.1):
     dependencies:
       '@fastify/rate-limit': 11.2.1
       dotenv: 18.0.8

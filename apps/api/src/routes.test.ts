@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from './app.js';
-import { inference, open, paid, perToken, type RunningNode, restricted, SAMPLE_RECIPIENT, startNode } from '@registry/node-fixtures';
+import { inference, open, paid, perToken, type RunningNode, restricted, SAMPLE_ORGANIZATION, startNode } from '@registry/node-fixtures';
 import { SyncService } from './sync/syncService.js';
 import { createTestDatabase } from './testing.js';
 
@@ -55,7 +55,7 @@ describe('routes', () => {
     it('ranks an exact name above prefix and substring matches', async () => {
         const { body } = await get('/v1/resources?q=weather');
         expect(body.items.map((r: { fqn: string }) => r.fqn)).toEqual(['com.example.Weather', 'com.example.weather.Radar']);
-        expect(body.items[0]).toMatchObject({ functionCount: 2, paidFunctionCount: 2, perTokenFunctionCount: 0, inferenceFunctionCount: 0, price: { minMicroUsdc: 2_500, maxMicroUsdc: 10_000 } });
+        expect(body.items[0]).toMatchObject({ functionCount: 2, paidFunctionCount: 2, perTokenFunctionCount: 0, inferenceFunctionCount: 0, price: { minMicroUsd: 2_500, maxMicroUsd: 10_000 } });
     });
 
     it('searches by path, name or function name', async () => {
@@ -86,7 +86,7 @@ describe('routes', () => {
             paidFunctionCount: 2,
             perTokenFunctionCount: 1,
             inferenceFunctionCount: 2,
-            price: { minMicroUsdc: 500, maxMicroUsdc: 500 },
+            price: { minMicroUsd: 500, maxMicroUsd: 500 },
         });
     });
 
@@ -97,7 +97,7 @@ describe('routes', () => {
             returnType: 'string',
             description: null,
             parameters: [{ name: 'prompt', type: 'string', description: null }, { name: 'maxTokens', type: 'int32', description: null }],
-            paymentManifest: { inputCostMicroUsdcPerMillionTokens: 3_000_000, outputCostMicroUsdcPerMillionTokens: 15_000_000, recipientAddress: SAMPLE_RECIPIENT },
+            paymentManifest: { inputCostMicroUsdPerMillionTokens: 3_000_000, outputCostMicroUsdPerMillionTokens: 15_000_000, recipientOrganizationId: SAMPLE_ORGANIZATION },
             restricted: false,
             kind: 'inference',
         });

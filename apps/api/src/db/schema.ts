@@ -52,10 +52,10 @@ export const resourceFunctionsTable = pgTable("resource_functions", {
   kind: varchar({ length: 16, enum: FUNCTION_KINDS }).notNull().default('fixed'),
   // The function's paymentManifest. All null for a free function. A paid fixed function has a cost,
   // a paid inference function both rates.
-  costMicroUsdc: bigint("cost_micro_usdc", { mode: 'number' }),
-  inputCostMicroUsdcPerMillionTokens: bigint("input_cost_micro_usdc_per_million_tokens", { mode: 'number' }),
-  outputCostMicroUsdcPerMillionTokens: bigint("output_cost_micro_usdc_per_million_tokens", { mode: 'number' }),
-  recipientAddress: varchar("recipient_address", { length: 64 }),
+  costMicroUsd: bigint("cost_micro_usd", { mode: 'number' }),
+  inputCostMicroUsdPerMillionTokens: bigint("input_cost_micro_usd_per_million_tokens", { mode: 'number' }),
+  outputCostMicroUsdPerMillionTokens: bigint("output_cost_micro_usd_per_million_tokens", { mode: 'number' }),
+  recipientOrganizationId: varchar("recipient_organization_id", { length: 64 }),
   // Order the node listed the function in.
   position: integer().notNull(),
 }, (table) => [

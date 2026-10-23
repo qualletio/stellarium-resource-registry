@@ -5,7 +5,8 @@ import { createServer } from 'node:net';
 import Fastify from 'fastify';
 import { StellariumNode, type StellariumResource, type StellariumResourceFunction } from 'stellarium-ts';
 
-export const SAMPLE_RECIPIENT = '9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin';
+/** The operator organization every fixture node is enrolled in, so the recipient of its paid functions. */
+export const SAMPLE_ORGANIZATION = 'org_sample';
 
 /** A function as declared, before the node gives it an implementation. */
 export type FunctionSpec = Omit<StellariumResourceFunction, 'exec' | 'id'>;
@@ -28,9 +29,9 @@ const params = (spec: string) =>
 export const open = (name: string, parameters: string, returnType: string): FunctionSpec =>
     ({ name, parameters: params(parameters), returnType });
 
-/** Costs `costMicroUsdc` per call, paid to `SAMPLE_RECIPIENT`. */
-export const paid = (name: string, parameters: string, returnType: string, costMicroUsdc: number): FunctionSpec =>
-    ({ ...open(name, parameters, returnType), paymentManifest: { costMicroUsdc, recipientAddress: SAMPLE_RECIPIENT } });
+/** Costs `costMicroUsd` per call. The node names its organization as the recipient. */
+export const paid = (name: string, parameters: string, returnType: string, costMicroUsd: number): FunctionSpec =>
+    ({ ...open(name, parameters, returnType), paymentManifest: { costMicroUsd } });
 
 /**
  * `inference('complete', 'prompt: string', 'string')`: free, priced per token with `perToken`.
@@ -39,10 +40,10 @@ export const paid = (name: string, parameters: string, returnType: string, costM
 export const inference = (name: string, parameters: string, returnType: string): FunctionSpec =>
     ({ ...open(name, parameters ? `${parameters}, maxTokens: int32` : 'maxTokens: int32', returnType), kind: 'inference' });
 
-/** Prices an inference function per million input and output tokens, paid to `SAMPLE_RECIPIENT`. */
-export const perToken = (fn: FunctionSpec, inputCostMicroUsdcPerMillionTokens: number, outputCostMicroUsdcPerMillionTokens: number): FunctionSpec => ({
+/** Prices an inference function per million input and output tokens. */
+export const perToken = (fn: FunctionSpec, inputCostMicroUsdPerMillionTokens: number, outputCostMicroUsdPerMillionTokens: number): FunctionSpec => ({
     ...fn,
-    paymentManifest: { inputCostMicroUsdcPerMillionTokens, outputCostMicroUsdcPerMillionTokens, recipientAddress: SAMPLE_RECIPIENT },
+    paymentManifest: { inputCostMicroUsdPerMillionTokens, outputCostMicroUsdPerMillionTokens },
     // Required on a paid inference function. The registry never calls one, so nothing is counted.
     estimateInputTokens: async () => 0,
 });
@@ -143,6 +144,18 @@ export function freePort(): Promise<number> {
     });
 }
 
+/**
+ * Stands in for the operator. A node hosting paid functions asks for its organization at start and
+ * won't start without one. The registry never calls a paid function, so every other request fails.
+ */
+async function startOperator(): Promise<{ url: string; close: () => Promise<void> }> {
+    const operator = Fastify();
+    operator.post('/v1/nodes/session', async () => ({ organizationId: SAMPLE_ORGANIZATION }));
+    operator.setNotFoundHandler(async (_request, reply) => reply.code(503).send({ error: 'The fixture operator only enrolls nodes' }));
+    const address = await operator.listen({ port: 0, host: '127.0.0.1' });
+    return { url: `${address}/v1`, close: () => operator.close() };
+}
+
 export async function startNode(options: StartNodeOptions): Promise<RunningNode> {
     const port = options.port ?? await freePort();
     const host = options.host ?? '127.0.0.1';
@@ -175,7 +188,9 @@ export async function startNode(options: StartNodeOptions): Promise<RunningNode>
         await node.register(resource);
     }
 
+    const operator = await startOperator();
     const fastify = Fastify({ logger: options.logger ?? false });
+    fastify.addHook('onClose', operator.close);
     // `start` listens before it bootstraps, so a failed bootstrap would otherwise keep the port.
     await node.start(fastify, {
         port,
@@ -185,8 +200,7 @@ export async function startNode(options: StartNodeOptions): Promise<RunningNode>
         privateKey: privateKey.toString('base64url'),
         databasePath: ':memory:',
         startingPeer: options.startingPeer,
-        // Required once a node hosts paid functions. The registry never calls one, so nothing settles.
-        operatorUrl: 'http://127.0.0.1:9/v1',
+        operatorUrl: operator.url,
         approveGrant: options.approveGrants ? async () => ({ lifetimeMs: 60 * 60_000 }) : undefined,
     }).catch(async (error: unknown) => {
         await fastify.close();

@@ -1,14 +1,14 @@
 import type { FunctionParameter, ResourceFunction } from '@registry/types';
 
-export const MICRO_USDC_PER_USDC = 1_000_000;
+export const MICRO_USD_PER_USD = 1_000_000;
 
-const microUsdcFormat = new Intl.NumberFormat('en-US');
-const usdcFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+const microUsdFormat = new Intl.NumberFormat('en-US');
+const usdFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
 
-/** `10,000` → "0.01 USDC". */
-export const formatUsdc = (microUsdc: number) => `${usdcFormat.format(microUsdc / MICRO_USDC_PER_USDC)} USDC`;
+/** `10,000` → "$0.01". */
+export const formatUsd = (microUsd: number) => `$${usdFormat.format(microUsd / MICRO_USD_PER_USD)}`;
 
-export const formatMicroUsdc = (microUsdc: number) => `${microUsdcFormat.format(microUsdc)} micro-USDC`;
+export const formatMicroUsd = (microUsd: number) => `${microUsdFormat.format(microUsd)} micro-USD`;
 
 /** A sample `maxTokens` for usage examples. The node refuses 0. */
 const EXAMPLE_MAX_TOKENS = 1024;

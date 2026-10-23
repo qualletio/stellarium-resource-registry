@@ -1,5 +1,5 @@
 import { isInferenceManifest, type NodeInfo, type PaymentManifest, type ResourceFunction } from '@registry/types';
-import { capabilityExample, formatMicroUsdc, formatUsdc, requestScriptExample } from '@/lib/format';
+import { capabilityExample, formatMicroUsd, formatUsd, requestScriptExample } from '@/lib/format';
 import { CopyButton } from './CopyButton';
 import styles from './FunctionCard.module.css';
 
@@ -25,17 +25,17 @@ function Price({ manifest }: { manifest: PaymentManifest | null }) {
   if (isInferenceManifest(manifest)) {
     return (
       <>
-        <span className={styles.amber}>{formatUsdc(manifest.inputCostMicroUsdcPerMillionTokens)}</span>{' '}
+        <span className={styles.amber}>{formatUsd(manifest.inputCostMicroUsdPerMillionTokens)}</span>{' '}
         <span className={styles.muted}>per 1M input tokens</span> ·{' '}
-        <span className={styles.amber}>{formatUsdc(manifest.outputCostMicroUsdcPerMillionTokens)}</span>{' '}
+        <span className={styles.amber}>{formatUsd(manifest.outputCostMicroUsdPerMillionTokens)}</span>{' '}
         <span className={styles.muted}>per 1M output tokens</span>
       </>
     );
   }
   return (
     <>
-      <span className={styles.amber}>{formatUsdc(manifest.costMicroUsdc)}</span>{' '}
-      <span className={styles.muted}>({formatMicroUsdc(manifest.costMicroUsdc)}) per call</span>
+      <span className={styles.amber}>{formatUsd(manifest.costMicroUsd)}</span>{' '}
+      <span className={styles.muted}>({formatMicroUsd(manifest.costMicroUsd)}) per call</span>
     </>
   );
 }
@@ -46,15 +46,15 @@ function PaymentNote({ manifest }: { manifest: PaymentManifest }) {
       <p className={styles.note}>
         Your node first asks the host for an estimate: the input tokens, and <code>maxAmount</code>, the charge for those plus{' '}
         <code>maxTokens</code> output tokens. It signs an inference voucher for <code>maxAmount</code> if that is within its{' '}
-        <code>INFERENCE_COST_LIMIT_MICRO_USDC</code>. The operator charges the tokens the call actually used at these rates, never
-        more than <code>maxAmount</code>, from your escrow: 80% to the recipient, 20% protocol fee.
+        <code>INFERENCE_COST_LIMIT_MICRO_USD</code>. The operator holds <code>maxAmount</code> on your organization's balance, then
+        charges the tokens the call actually used at these rates: 80% to the recipient organization, 20% platform fee.
       </p>
     );
   }
   return (
     <p className={styles.note}>
-      Your node signs a payment voucher for {formatUsdc(manifest.costMicroUsdc)} with each call. The operator settles it from your
-      escrow: 80% to the recipient, 20% protocol fee.
+      Your node signs a payment voucher for {formatUsd(manifest.costMicroUsd)} with each call. The operator holds it on your
+      organization's balance and charges it once the call succeeds: 80% to the recipient organization, 20% platform fee.
     </p>
   );
 }
@@ -127,8 +127,8 @@ export function FunctionCard({ path, name, fn, host }: Props) {
           <>
             <dt>recipient</dt>
             <dd className={styles.copyRow}>
-              <code className={styles.address}>{fn.paymentManifest.recipientAddress}</code>
-              <CopyButton value={fn.paymentManifest.recipientAddress} />
+              <code className={styles.address}>{fn.paymentManifest.recipientOrganizationId}</code>
+              <CopyButton value={fn.paymentManifest.recipientOrganizationId} />
             </dd>
           </>
         )}

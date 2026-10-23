@@ -10,7 +10,7 @@ import {
     paid,
     type RunningNode,
     restricted,
-    SAMPLE_RECIPIENT,
+    SAMPLE_ORGANIZATION,
     SOURCE_RESOURCES,
     type StartNodeOptions,
     startNode,
@@ -78,7 +78,7 @@ describe('SyncService against a real stellarium-ts node', () => {
                     { name: 'to', type: 'string', description: 'The account to credit.' },
                     { name: 'amount', type: 'int64', description: 'How much to move, in lamports.' },
                 ],
-                paymentManifest: { costMicroUsdc: 5_000, recipientAddress: SAMPLE_RECIPIENT },
+                paymentManifest: { costMicroUsd: 5_000, recipientOrganizationId: SAMPLE_ORGANIZATION },
                 restricted: true,
                 kind: 'fixed',
             },
@@ -96,7 +96,7 @@ describe('SyncService against a real stellarium-ts node', () => {
                 name: 'complete',
                 kind: 'inference',
                 parameters: [{ name: 'prompt' }, { name: 'maxTokens', type: 'int32', description: 'The most output tokens to generate.' }],
-                paymentManifest: { inputCostMicroUsdcPerMillionTokens: 3_000_000, outputCostMicroUsdcPerMillionTokens: 15_000_000, recipientAddress: SAMPLE_RECIPIENT },
+                paymentManifest: { inputCostMicroUsdPerMillionTokens: 3_000_000, outputCostMicroUsdPerMillionTokens: 15_000_000, recipientOrganizationId: SAMPLE_ORGANIZATION },
             },
             { name: 'summarize', kind: 'inference', paymentManifest: null },
         ]);
@@ -127,7 +127,7 @@ describe('SyncService against a real stellarium-ts node', () => {
         await startSource({ resources: [{ ...weather, functions: [paid('temperature', 'city: string', 'int32', 20_000)] }, ledger] });
         await service.sync();
         const detail = await repository.getResource('com.example.Weather');
-        expect(detail?.functions.map((fn) => [fn.name, fn.paymentManifest])).toEqual([['temperature', { costMicroUsdc: 20_000, recipientAddress: SAMPLE_RECIPIENT }]]);
+        expect(detail?.functions.map((fn) => [fn.name, fn.paymentManifest])).toEqual([['temperature', { costMicroUsd: 20_000, recipientOrganizationId: SAMPLE_ORGANIZATION }]]);
     });
 
     it('updates descriptions and websites when the node changes them', async () => {
@@ -184,7 +184,7 @@ describe('SyncService against a real stellarium-ts node', () => {
         expect(library?.functions.find((fn) => fn.name === 'ask')).toMatchObject({
             kind: 'inference',
             restricted: true,
-            paymentManifest: { inputCostMicroUsdcPerMillionTokens: 1_000_000, outputCostMicroUsdcPerMillionTokens: 0 },
+            paymentManifest: { inputCostMicroUsdPerMillionTokens: 1_000_000, outputCostMicroUsdPerMillionTokens: 0, recipientOrganizationId: SAMPLE_ORGANIZATION },
         });
 
         const byUrl = new Map((await repository.getNodes()).map((node) => [node.baseUrl, node]));

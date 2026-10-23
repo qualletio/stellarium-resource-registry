@@ -29,10 +29,10 @@ export function functionsHash(resource: NodeResource): string {
 /** A function's paymentManifest as `resource_functions` columns, all null for a free function. */
 function manifestColumns(manifest: NodePaymentManifest | undefined) {
     return {
-        costMicroUsdc: manifest && 'costMicroUsdc' in manifest ? manifest.costMicroUsdc : null,
-        inputCostMicroUsdcPerMillionTokens: manifest && 'inputCostMicroUsdcPerMillionTokens' in manifest ? manifest.inputCostMicroUsdcPerMillionTokens : null,
-        outputCostMicroUsdcPerMillionTokens: manifest && 'outputCostMicroUsdcPerMillionTokens' in manifest ? manifest.outputCostMicroUsdcPerMillionTokens : null,
-        recipientAddress: manifest?.recipientAddress ?? null,
+        costMicroUsd: manifest && 'costMicroUsd' in manifest ? manifest.costMicroUsd : null,
+        inputCostMicroUsdPerMillionTokens: manifest && 'inputCostMicroUsdPerMillionTokens' in manifest ? manifest.inputCostMicroUsdPerMillionTokens : null,
+        outputCostMicroUsdPerMillionTokens: manifest && 'outputCostMicroUsdPerMillionTokens' in manifest ? manifest.outputCostMicroUsdPerMillionTokens : null,
+        recipientOrganizationId: manifest?.recipientOrganizationId ?? null,
     };
 }
 

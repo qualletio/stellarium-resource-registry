@@ -1,6 +1,6 @@
 /**
  * The registry API's wire types, shared by `apps/api` (which produces them) and `apps/web` (which reads them).
- * Timestamps are ISO 8601 strings. Prices are integer micro-USDC (1 USDC = 1,000,000).
+ * Timestamps are ISO 8601 strings. Prices are integer micro-USD (1 USD = 1,000,000).
  */
 
 /** Which fields a search matches against. */
@@ -27,8 +27,8 @@ export interface Page<T> {
 }
 
 export interface PriceRange {
-    minMicroUsdc: number;
-    maxMicroUsdc: number;
+    minMicroUsd: number;
+    maxMicroUsd: number;
 }
 
 export interface ResourceSummary {
@@ -63,15 +63,15 @@ export interface FunctionParameter {
 
 /** A fixed function's `paymentManifest`: a flat price per call. */
 export interface FixedPaymentManifest {
-    costMicroUsdc: number;
-    recipientAddress: string;
+    costMicroUsd: number;
+    recipientOrganizationId: string;
 }
 
 /** An inference function's `paymentManifest`: rates per million tokens. Either may be 0. */
 export interface InferencePaymentManifest {
-    inputCostMicroUsdcPerMillionTokens: number;
-    outputCostMicroUsdcPerMillionTokens: number;
-    recipientAddress: string;
+    inputCostMicroUsdPerMillionTokens: number;
+    outputCostMicroUsdPerMillionTokens: number;
+    recipientOrganizationId: string;
 }
 
 /** A function's `paymentManifest`, as the hosting node publishes it. Its shape follows the function's `kind`. */
@@ -82,7 +82,7 @@ export const FUNCTION_KINDS = ['fixed', 'inference'] as const;
 export type FunctionKind = typeof FUNCTION_KINDS[number];
 
 export const isInferenceManifest = (manifest: PaymentManifest): manifest is InferencePaymentManifest =>
-    'inputCostMicroUsdcPerMillionTokens' in manifest;
+    'inputCostMicroUsdPerMillionTokens' in manifest;
 
 export interface ResourceFunction {
     name: string;

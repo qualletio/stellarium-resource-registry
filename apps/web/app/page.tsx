@@ -75,8 +75,8 @@ export default async function HomePage() {
           </dd>
           <dt>paid</dt>
           <dd>
-            A function with a <code>paymentManifest</code> costs a fixed amount of USDC per call, or for an inference function, a rate
-            per million input and output tokens. Your node pays it with a signed voucher, settled on Solana from your escrow.
+            A function with a <code>paymentManifest</code> costs a fixed amount of USD per call, or for an inference function, a rate
+            per million input and output tokens. Your node pays it with a signed voucher, charged to your organization's balance.
           </dd>
           <dt>inference</dt>
           <dd>

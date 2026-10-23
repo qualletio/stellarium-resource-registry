@@ -17,8 +17,8 @@ export interface NodePeer {
 }
 
 export type NodePaymentManifest =
-    | { costMicroUsdc: number; recipientAddress: string }
-    | { inputCostMicroUsdcPerMillionTokens: number; outputCostMicroUsdcPerMillionTokens: number; recipientAddress: string };
+    | { costMicroUsd: number; recipientOrganizationId: string }
+    | { inputCostMicroUsdPerMillionTokens: number; outputCostMicroUsdPerMillionTokens: number; recipientOrganizationId: string };
 
 export interface NodeFunction {
     name: string;
@@ -115,14 +115,14 @@ function parseKind(value: unknown): NodeFunction['kind'] | undefined {
 /** A fixed function is priced per call, an inference function per million input and output tokens. */
 function parsePaymentManifest(value: unknown, kind: NodeFunction['kind']): Optional<NodePaymentManifest> {
     if (value === undefined || value === null) return { ok: true };
-    if (!isObject(value) || !isNonEmptyString(value.recipientAddress)) return { ok: false };
+    if (!isObject(value) || !isNonEmptyString(value.recipientOrganizationId)) return { ok: false };
     if (kind === 'inference') {
-        const { inputCostMicroUsdcPerMillionTokens: input, outputCostMicroUsdcPerMillionTokens: output } = value;
+        const { inputCostMicroUsdPerMillionTokens: input, outputCostMicroUsdPerMillionTokens: output } = value;
         if (!isNonnegativeSafeInteger(input) || !isNonnegativeSafeInteger(output)) return { ok: false };
-        return { ok: true, value: { inputCostMicroUsdcPerMillionTokens: input, outputCostMicroUsdcPerMillionTokens: output, recipientAddress: value.recipientAddress } };
+        return { ok: true, value: { inputCostMicroUsdPerMillionTokens: input, outputCostMicroUsdPerMillionTokens: output, recipientOrganizationId: value.recipientOrganizationId } };
     }
-    if (!isNonnegativeSafeInteger(value.costMicroUsdc)) return { ok: false };
-    return { ok: true, value: { costMicroUsdc: value.costMicroUsdc, recipientAddress: value.recipientAddress } };
+    if (!isNonnegativeSafeInteger(value.costMicroUsd)) return { ok: false };
+    return { ok: true, value: { costMicroUsd: value.costMicroUsd, recipientOrganizationId: value.recipientOrganizationId } };
 }
 
 function parseFunction(value: unknown): NodeFunction | undefined {

@@ -31,16 +31,16 @@ type FunctionRow = typeof resourceFunctionsTable.$inferSelect;
 
 /** Per-token rates for an inference function, a flat cost for a fixed one. Null for a free function. */
 function toPaymentManifest(fn: FunctionRow): PaymentManifest | null {
-    if (fn.recipientAddress === null) return null;
+    if (fn.recipientOrganizationId === null) return null;
     if (fn.kind === 'inference') {
-        if (fn.inputCostMicroUsdcPerMillionTokens === null || fn.outputCostMicroUsdcPerMillionTokens === null) return null;
+        if (fn.inputCostMicroUsdPerMillionTokens === null || fn.outputCostMicroUsdPerMillionTokens === null) return null;
         return {
-            inputCostMicroUsdcPerMillionTokens: fn.inputCostMicroUsdcPerMillionTokens,
-            outputCostMicroUsdcPerMillionTokens: fn.outputCostMicroUsdcPerMillionTokens,
-            recipientAddress: fn.recipientAddress,
+            inputCostMicroUsdPerMillionTokens: fn.inputCostMicroUsdPerMillionTokens,
+            outputCostMicroUsdPerMillionTokens: fn.outputCostMicroUsdPerMillionTokens,
+            recipientOrganizationId: fn.recipientOrganizationId,
         };
     }
-    return fn.costMicroUsdc === null ? null : { costMicroUsdc: fn.costMicroUsdc, recipientAddress: fn.recipientAddress };
+    return fn.costMicroUsd === null ? null : { costMicroUsd: fn.costMicroUsd, recipientOrganizationId: fn.recipientOrganizationId };
 }
 
 export function toNodeInfo(node: NodeRow): NodeInfo {
@@ -129,12 +129,12 @@ export class RegistryRepository {
             from resources r
             cross join lateral (
                 select count(*) as function_count,
-                       count(f.recipient_address) as paid_count,
-                       count(f.input_cost_micro_usdc_per_million_tokens) as per_token_count,
+                       count(f.recipient_organization_id) as paid_count,
+                       count(f.input_cost_micro_usd_per_million_tokens) as per_token_count,
                        count(*) filter (where f.restricted) as restricted_count,
                        count(*) filter (where f.kind = 'inference') as inference_count,
-                       min(f.cost_micro_usdc) as min_cost,
-                       max(f.cost_micro_usdc) as max_cost,
+                       min(f.cost_micro_usd) as min_cost,
+                       max(f.cost_micro_usd) as max_cost,
                        ${matchesFunctions
                            ? sql`array_agg(f.name order by f.position) filter (where f.name ilike ${pattern})`
                            : sql`null::text[]`} as matched
@@ -155,7 +155,7 @@ export class RegistryRepository {
                 description: row.description,
                 functionCount: Number(row.function_count),
                 matchedFunctions: row.matched ?? [],
-                price: row.min_cost === null || row.max_cost === null ? null : { minMicroUsdc: Number(row.min_cost), maxMicroUsdc: Number(row.max_cost) },
+                price: row.min_cost === null || row.max_cost === null ? null : { minMicroUsd: Number(row.min_cost), maxMicroUsd: Number(row.max_cost) },
                 paidFunctionCount: Number(row.paid_count),
                 perTokenFunctionCount: Number(row.per_token_count),
                 restrictedFunctionCount: Number(row.restricted_count),
@@ -230,7 +230,7 @@ export class RegistryRepository {
             select
                 (select count(*) from resources where removed_at is null) as resources,
                 count(f.id) as functions,
-                count(f.recipient_address) as paid_functions,
+                count(f.recipient_organization_id) as paid_functions,
                 count(*) filter (where f.restricted) as restricted_functions,
                 count(*) filter (where f.kind = 'inference') as inference_functions,
                 (select count(*) from nodes) as nodes

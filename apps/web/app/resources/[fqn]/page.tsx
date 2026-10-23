@@ -6,7 +6,7 @@ import { CopyButton } from '@/components/CopyButton';
 import { FunctionCard } from '@/components/FunctionCard';
 import terminal from '@/components/Terminal.module.css';
 import { getResource } from '@/lib/api';
-import { formatDate, formatUsdc, timeAgo } from '@/lib/format';
+import { formatDate, formatUsd, timeAgo } from '@/lib/format';
 import { pageMetadata } from '@/lib/site';
 import styles from './page.module.css';
 
@@ -24,7 +24,7 @@ async function fqnFrom(params: Props['params']): Promise<string> {
 /** Per-call costs of the paid fixed functions, and how many paid inference functions are priced per token instead. */
 function pricing(resource: ResourceDetail) {
   const manifests = resource.functions.flatMap((fn) => (fn.paymentManifest ? [fn.paymentManifest] : []));
-  const costs = manifests.flatMap((manifest) => (isInferenceManifest(manifest) ? [] : [manifest.costMicroUsdc]));
+  const costs = manifests.flatMap((manifest) => (isInferenceManifest(manifest) ? [] : [manifest.costMicroUsd]));
   return { paid: manifests.length, costs, perToken: manifests.length - costs.length };
 }
 
@@ -34,7 +34,7 @@ function summarize(resource: ResourceDetail): string {
   const restricted = resource.functions.filter((fn) => fn.restricted).length;
   const count = `${resource.functions.length} function${resource.functions.length === 1 ? '' : 's'}`;
   const prices = [
-    ...(costs.length > 0 ? [`from ${formatUsdc(Math.min(...costs))} per call`] : []),
+    ...(costs.length > 0 ? [`from ${formatUsd(Math.min(...costs))} per call`] : []),
     ...(perToken > 0 ? [`${perToken} priced per token`] : []),
   ];
   const price = paid === 0 ? 'all free' : `${paid} paid, ${prices.join(', ')}`;
@@ -67,8 +67,8 @@ export default async function ResourcePage({ params }: Props) {
     costs.length === 0
       ? undefined
       : Math.min(...costs) === Math.max(...costs)
-        ? `${formatUsdc(costs[0])} per call`
-        : `${formatUsdc(Math.min(...costs))} – ${formatUsdc(Math.max(...costs))} per call`;
+        ? `${formatUsd(costs[0])} per call`
+        : `${formatUsd(Math.min(...costs))} – ${formatUsd(Math.max(...costs))} per call`;
 
   return (
     <>

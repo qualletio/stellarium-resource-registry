@@ -1,17 +1,17 @@
 import type { ResourceSummary } from '@registry/types';
 import Link from 'next/link';
-import { formatUsdc, timeAgo } from '@/lib/format';
+import { formatUsd, timeAgo } from '@/lib/format';
 import { AccessIcon } from './AccessIcon';
 import { Highlight } from './Highlight';
 import styles from './ResourceList.module.css';
 
-/** "free", a per-call range, "per token" for paid inference functions, or a mix: "free / 0.01 USDC / per token". */
+/** "free", a per-call range, "per token" for paid inference functions, or a mix: "free / $0.01 / per token". */
 function priceLabel(resource: ResourceSummary): string {
   const parts: string[] = [];
   if (resource.paidFunctionCount < resource.functionCount) parts.push('free');
   if (resource.price) {
-    const { minMicroUsdc, maxMicroUsdc } = resource.price;
-    parts.push(minMicroUsdc === maxMicroUsdc ? formatUsdc(minMicroUsdc) : `${formatUsdc(minMicroUsdc).replace(' USDC', '')}–${formatUsdc(maxMicroUsdc)}`);
+    const { minMicroUsd, maxMicroUsd } = resource.price;
+    parts.push(minMicroUsd === maxMicroUsd ? formatUsd(minMicroUsd) : `${formatUsd(minMicroUsd)}–${formatUsd(maxMicroUsd)}`);
   }
   if (resource.perTokenFunctionCount > 0) parts.push('per token');
   return parts.join(' / ');
