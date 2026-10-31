@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseResource } from './nodeClient.js';
+import { MAX_CONTRACT_SOURCE_BYTES, parseContract, parseResource } from './nodeClient.js';
 
 const valid = {
     path: 'com.example',
@@ -16,6 +16,14 @@ const complete = {
     parameters: [{ name: 'prompt', type: 'string' }, { name: 'maxTokens', type: 'int32' }],
     paymentManifest: { inputCostMicroUsdPerMillionTokens: 3_000_000, outputCostMicroUsdPerMillionTokens: 0, recipientOrganizationId: 'org_1' },
     kind: 'inference',
+};
+
+const run = {
+    name: 'run',
+    returnType: 'string',
+    parameters: [{ name: 'city', type: 'string' }],
+    paymentManifest: { priceMicroUsdPerMillionTokens: 2_000_000, recipientOrganizationId: 'org_1' },
+    kind: 'contract',
 };
 
 describe('parseResource', () => {
@@ -35,6 +43,10 @@ describe('parseResource', () => {
             paymentManifest: { inputCostMicroUsdPerMillionTokens: 3_000_000, outputCostMicroUsdPerMillionTokens: 0, recipientOrganizationId: 'org_1' },
         });
         expect(parseResource({ ...valid, functions: [{ ...complete, paymentManifest: undefined }] })?.functions[0]).toMatchObject({ kind: 'inference', paymentManifest: undefined });
+    });
+
+    it('accepts a contract priced per script token', () => {
+        expect(parseResource({ ...valid, functions: [run] })?.functions).toEqual([{ ...run, description: undefined, restricted: false }]);
     });
 
     it('keeps descriptions and an http(s) website, and treats null or empty ones as absent', () => {
@@ -72,6 +84,11 @@ describe('parseResource', () => {
         ['a fixed function with per-token rates', { ...valid, functions: [{ ...complete, kind: undefined }] }],
         ['a negative token rate', { ...valid, functions: [{ ...complete, paymentManifest: { ...complete.paymentManifest, outputCostMicroUsdPerMillionTokens: -1 } }] }],
         ['a missing token rate', { ...valid, functions: [{ ...complete, paymentManifest: { inputCostMicroUsdPerMillionTokens: 1, recipientOrganizationId: 'org_1' } }] }],
+        ['a contract without a price', { ...valid, functions: [{ ...run, paymentManifest: undefined }] }],
+        ['a contract with a per-call price', { ...valid, functions: [{ ...run, paymentManifest: { costMicroUsd: 10, recipientOrganizationId: 'org_1' } }] }],
+        ['a contract function not named run', { ...valid, functions: [{ ...run, name: 'call' }] }],
+        ['a contract alongside other functions', { ...valid, functions: [run, valid.functions[0]] }],
+        ['a fixed function with a contract price', { ...valid, functions: [{ ...run, kind: undefined }] }],
         ['a non-string parameter description', { ...valid, functions: [{ ...valid.functions[0], parameters: [{ name: 'city', type: 'string', description: ['A city'] }] }] }],
     ])('rejects %s', (_, resource) => {
         expect(parseResource(resource)).toBeUndefined();
@@ -80,5 +97,40 @@ describe('parseResource', () => {
     it('treats anything but `restricted: true` as open', () => {
         const parsed = parseResource({ ...valid, functions: [{ ...valid.functions[0], restricted: 'yes' }] });
         expect(parsed?.functions[0].restricted).toBe(false);
+    });
+});
+
+const contract = {
+    path: 'com.example',
+    name: 'Outlook',
+    version: '1.2',
+    source: 'contract com.example.Outlook@1.2(city: string): string {\n  return city\n}',
+    parameters: [{ name: 'city', type: 'string' }],
+    returnType: 'string',
+    ownerOrganizationId: 'org_1',
+    description: 'Today in words',
+    createdAt: '2026-10-30T12:00:00.000Z',
+};
+
+describe('parseContract', () => {
+    it('accepts a well-formed contract version', () => {
+        expect(parseContract(contract)).toEqual({ ...contract, createdAt: new Date(contract.createdAt) });
+        expect(parseContract({ ...contract, ownerOrganizationId: null, description: null })).toMatchObject({ ownerOrganizationId: null, description: undefined });
+    });
+
+    it.each([
+        ['a missing path', { ...contract, path: '' }],
+        ['a non-numeric version', { ...contract, version: 'latest' }],
+        ['a version with an empty segment', { ...contract, version: '1..2' }],
+        ['an empty source', { ...contract, source: '' }],
+        ['a source over the size limit', { ...contract, source: 'x'.repeat(MAX_CONTRACT_SOURCE_BYTES + 1) }],
+        ['a malformed parameter', { ...contract, parameters: [{ name: 'city' }] }],
+        ['a missing return type', { ...contract, returnType: '' }],
+        ['a non-string owner', { ...contract, ownerOrganizationId: 7 }],
+        ['an owner too long to store', { ...contract, ownerOrganizationId: 'o'.repeat(65) }],
+        ['a non-string description', { ...contract, description: 42 }],
+        ['an invalid deploy time', { ...contract, createdAt: 'yesterday' }],
+    ])('rejects %s', (_, value) => {
+        expect(parseContract(value)).toBeUndefined();
     });
 });

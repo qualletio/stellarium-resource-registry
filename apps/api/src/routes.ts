@@ -20,6 +20,7 @@ interface SearchQuerystring {
     paid: boolean;
     restricted: boolean;
     inference: boolean;
+    contract: boolean;
     offset: number;
     limit: number;
 }
@@ -32,6 +33,7 @@ const searchQuerySchema = {
         paid: { type: 'boolean', default: false },
         restricted: { type: 'boolean', default: false },
         inference: { type: 'boolean', default: false },
+        contract: { type: 'boolean', default: false },
         offset: { type: 'integer', minimum: 0, default: 0 },
         limit: { type: 'integer', minimum: 1, maximum: MAX_PAGE_SIZE, default: DEFAULT_PAGE_SIZE },
     },
@@ -41,6 +43,15 @@ const fqnParamsSchema = {
     type: 'object',
     required: ['fqn'],
     properties: { fqn: { type: 'string', minLength: 3, maxLength: 512 } },
+} as const;
+
+const contractVersionParamsSchema = {
+    type: 'object',
+    required: ['fqn', 'version'],
+    properties: {
+        fqn: fqnParamsSchema.properties.fqn,
+        version: { type: 'string', minLength: 1, maxLength: 64 },
+    },
 } as const;
 
 const syncRunsQuerySchema = {
@@ -81,6 +92,16 @@ const routes: FastifyPluginAsync<RouteOptions> = async (fastify, options) => {
             return reply.status(404).send({ error: 'Resource not found' });
         }
         return resource;
+    });
+
+    /** One version of a contract, with its RequestScript source. */
+    fastify.get('/resources/:fqn/versions/:version', { schema: { params: contractVersionParamsSchema } }, async (request, reply) => {
+        const { fqn, version } = request.params as { fqn: string; version: string };
+        const contract = await repository.getContractVersion(fqn, version);
+        if (!contract) {
+            return reply.status(404).send({ error: 'Contract version not found' });
+        }
+        return contract;
     });
 
     fastify.get('/nodes', async () => ({ items: await repository.getNodes() }));

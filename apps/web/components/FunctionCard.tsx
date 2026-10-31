@@ -1,4 +1,4 @@
-import { isInferenceManifest, type NodeInfo, type PaymentManifest, type ResourceFunction } from '@registry/types';
+import { isContractManifest, isInferenceManifest, type NodeInfo, type PaymentManifest, type ResourceFunction } from '@registry/types';
 import { capabilityExample, formatMicroUsd, formatUsd, requestScriptExample } from '@/lib/format';
 import { CopyButton } from './CopyButton';
 import styles from './FunctionCard.module.css';
@@ -22,6 +22,14 @@ function GrantStatus({ host }: { host: NodeInfo | null }) {
 
 function Price({ manifest }: { manifest: PaymentManifest | null }) {
   if (!manifest) return <span className={styles.muted}>free: no paymentManifest</span>;
+  if (isContractManifest(manifest)) {
+    return (
+      <>
+        <span className={styles.amber}>{formatUsd(manifest.priceMicroUsdPerMillionTokens)}</span>{' '}
+        <span className={styles.muted}>per 1M script tokens executed, plus the paid calls it makes</span>
+      </>
+    );
+  }
   if (isInferenceManifest(manifest)) {
     return (
       <>
@@ -41,6 +49,16 @@ function Price({ manifest }: { manifest: PaymentManifest | null }) {
 }
 
 function PaymentNote({ manifest }: { manifest: PaymentManifest }) {
+  if (isContractManifest(manifest)) {
+    return (
+      <p className={styles.note}>
+        Your node signs a contract voucher for the call, with this price and <code>maxAmount</code>, its{' '}
+        <code>CONTRACT_COST_LIMIT_MICRO_USD</code>. The operator holds <code>maxAmount</code> on your organization's balance. The
+        contract's own paid calls draw on that hold, and afterwards the host charges the script tokens the contract executed. What's
+        left of the hold is released. A call that fails is still charged for its tokens.
+      </p>
+    );
+  }
   if (isInferenceManifest(manifest)) {
     return (
       <p className={styles.note}>
@@ -86,6 +104,7 @@ export function FunctionCard({ path, name, fn, host }: Props) {
         </h3>
         <div className={styles.badges}>
           {fn.kind === 'inference' && <span className={styles.badgeInference}>inference</span>}
+          {fn.kind === 'contract' && <span className={styles.badgeContract}>contract</span>}
           <span className={fn.paymentManifest ? styles.badgePaid : styles.badgeFree}>{fn.paymentManifest ? 'paid' : 'free'}</span>
           <span className={fn.restricted ? styles.badgeRestricted : styles.badgeOpen}>{fn.restricted ? 'restricted' : 'open'}</span>
         </div>
@@ -116,6 +135,15 @@ export function FunctionCard({ path, name, fn, host }: Props) {
             <dd>
               <span className={styles.cyan}>inference</span>
               <span className={styles.muted}>: runs AI inference; maxTokens caps the output tokens</span>
+            </dd>
+          </>
+        )}
+        {fn.kind === 'contract' && (
+          <>
+            <dt>kind</dt>
+            <dd>
+              <span className={styles.violet}>contract</span>
+              <span className={styles.muted}>: runs the contract&apos;s latest version on its host</span>
             </dd>
           </>
         )}

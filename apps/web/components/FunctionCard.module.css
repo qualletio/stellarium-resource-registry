@@ -56,7 +56,8 @@
 .badgePaid,
 .badgeOpen,
 .badgeRestricted,
-.badgeInference {
+.badgeInference,
+.badgeContract {
   font-size: 12px;
   padding: 0 6px;
   border: 1px solid currentColor;
@@ -79,6 +80,10 @@
 
 .badgeInference {
   color: var(--cyan);
+}
+
+.badgeContract {
+  color: var(--violet);
 }
 
 .description {
@@ -133,6 +138,10 @@
 
 .cyan {
   color: var(--cyan);
+}
+
+.violet {
+  color: var(--violet);
 }
 
 .ok {

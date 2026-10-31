@@ -14,6 +14,7 @@
   --amber: #ffb454;
   --amber-dim: rgba(255, 180, 84, 0.12);
   --cyan: #5ccfe6;
+  --violet: #c792ea;
   --danger: #ff6b6b;
   --danger-dim: rgba(255, 107, 107, 0.12);
   --selection: rgba(62, 240, 138, 0.25);
@@ -35,6 +36,7 @@
   --amber: #9a5800;
   --amber-dim: rgba(154, 88, 0, 0.1);
   --cyan: #0b6a80;
+  --violet: #7b3fa0;
   --danger: #b3261e;
   --danger-dim: rgba(179, 38, 30, 0.08);
   --selection: rgba(11, 122, 62, 0.2);

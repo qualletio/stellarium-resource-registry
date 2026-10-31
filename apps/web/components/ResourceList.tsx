@@ -5,7 +5,7 @@ import { AccessIcon } from './AccessIcon';
 import { Highlight } from './Highlight';
 import styles from './ResourceList.module.css';
 
-/** "free", a per-call range, "per token" for paid inference functions, or a mix: "free / $0.01 / per token". */
+/** "free", a per-call range, "per token" for paid inference functions and contracts, or a mix: "free / $0.01 / per token". */
 function priceLabel(resource: ResourceSummary): string {
   const parts: string[] = [];
   if (resource.paidFunctionCount < resource.functionCount) parts.push('free');
@@ -33,7 +33,7 @@ export function ResourceList({ resources, query }: { resources: ResourceSummary[
           <span className={styles.count} title="functions">
             {String(resource.functionCount).padStart(2, ' ')} fn
           </span>
-          <span className={resource.paidFunctionCount > 0 ? styles.paid : styles.free} title="price per call, or per token for inference functions">
+          <span className={resource.paidFunctionCount > 0 ? styles.paid : styles.free} title="price per call, or per token for inference functions and contracts">
             {priceLabel(resource)}
           </span>
           <span className={styles.name}>
@@ -45,6 +45,7 @@ export function ResourceList({ resources, query }: { resources: ResourceSummary[
                 <Highlight text={resource.name} query={query} />
               </span>
             </Link>
+            {resource.isContract && <span className={styles.contract}> [contract]</span>}
             {resource.matchedFunctions.length > 0 && (
               <span className={styles.matched}>
                 {' '}→ {resource.matchedFunctions.map((fn, index) => (

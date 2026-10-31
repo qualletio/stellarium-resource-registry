@@ -11,6 +11,7 @@ export interface SearchState {
   paid: boolean;
   restricted: boolean;
   inference: boolean;
+  contract: boolean;
 }
 
 interface Props {
@@ -29,6 +30,7 @@ function urlFor(state: SearchState): string {
   if (state.paid) params.set('paid', 'true');
   if (state.restricted) params.set('restricted', 'true');
   if (state.inference) params.set('inference', 'true');
+  if (state.contract) params.set('contract', 'true');
   const query = params.toString();
   return query ? `/search?${query}` : '/search';
 }
@@ -146,6 +148,16 @@ export function SearchPrompt({ initial, live = false, autoFocus = false }: Props
                 onChange={(event) => update({ ...state, inference: event.target.checked }, false)}
               />
               <span>--inference</span>
+            </label>
+            <label className={styles.chip}>
+              <input
+                type="checkbox"
+                name="contract"
+                value="true"
+                checked={state.contract}
+                onChange={(event) => update({ ...state, contract: event.target.checked }, false)}
+              />
+              <span>--contract</span>
             </label>
           </fieldset>
           {!live && (

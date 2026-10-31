@@ -1,5 +1,5 @@
 import 'server-only';
-import type { Page, ResourceDetail, ResourceSummary, SearchQuery, Stats } from '@registry/types';
+import type { ContractVersion, Page, ResourceDetail, ResourceSummary, SearchQuery, Stats } from '@registry/types';
 
 const API_URL = (process.env.API_URL ?? 'http://127.0.0.1:4000').replace(/\/+$/, '');
 
@@ -28,6 +28,7 @@ export function searchParamsFor(query: SearchQuery): URLSearchParams {
   if (query.paid) params.set('paid', 'true');
   if (query.restricted) params.set('restricted', 'true');
   if (query.inference) params.set('inference', 'true');
+  if (query.contract) params.set('contract', 'true');
   if (query.offset) params.set('offset', String(query.offset));
   if (query.limit) params.set('limit', String(query.limit));
   return params;
@@ -37,12 +38,19 @@ export const getStats = () => get<Stats>('/stats');
 
 export const searchResources = (query: SearchQuery) => get<Page<ResourceSummary>>(`/resources?${searchParamsFor(query)}`);
 
-/** Undefined when the registry has never seen the resource. */
-export async function getResource(fqn: string): Promise<ResourceDetail | undefined> {
+/** Undefined on a 404. */
+async function getOptional<T>(path: string): Promise<T | undefined> {
   try {
-    return await get<ResourceDetail>(`/resources/${encodeURIComponent(fqn)}`);
+    return await get<T>(path);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return undefined;
     throw error;
   }
 }
+
+/** Undefined when the registry has never seen the resource. */
+export const getResource = (fqn: string) => getOptional<ResourceDetail>(`/resources/${encodeURIComponent(fqn)}`);
+
+/** One version of a contract with its source. Undefined when the registry has no such version. */
+export const getContractVersion = (fqn: string, version: string) =>
+  getOptional<ContractVersion>(`/resources/${encodeURIComponent(fqn)}/versions/${encodeURIComponent(version)}`);

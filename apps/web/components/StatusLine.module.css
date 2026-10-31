@@ -24,6 +24,10 @@
   color: var(--cyan);
 }
 
+.line .violet {
+  color: var(--violet);
+}
+
 .line .danger {
   color: var(--danger);
 }

@@ -18,17 +18,18 @@ export interface NodePeer {
 
 export type NodePaymentManifest =
     | { costMicroUsd: number; recipientOrganizationId: string }
-    | { inputCostMicroUsdPerMillionTokens: number; outputCostMicroUsdPerMillionTokens: number; recipientOrganizationId: string };
+    | { inputCostMicroUsdPerMillionTokens: number; outputCostMicroUsdPerMillionTokens: number; recipientOrganizationId: string }
+    | { priceMicroUsdPerMillionTokens: number; recipientOrganizationId: string };
 
 export interface NodeFunction {
     name: string;
     returnType: string;
     description?: string;
     parameters: { name: string; type: string; description?: string }[];
-    /** Per-call for a fixed function, per-token for an inference function. */
+    /** Per-call for a fixed function, per-token for an inference function, per script token for a contract. */
     paymentManifest?: NodePaymentManifest;
     restricted: boolean;
-    kind: 'fixed' | 'inference';
+    kind: 'fixed' | 'inference' | 'contract';
 }
 
 export interface NodeResource {
@@ -39,6 +40,19 @@ export interface NodeResource {
     website?: string;
     description?: string;
     functions: NodeFunction[];
+}
+
+/** One version of a contract, as its host's `GET /v1/contracts` lists it. */
+export interface NodeContract {
+    path: string;
+    name: string;
+    version: string;
+    source: string;
+    parameters: { name: string; type: string }[];
+    returnType: string;
+    ownerOrganizationId: string | null;
+    description?: string;
+    createdAt: Date;
 }
 
 /** The outcome of calling a restricted function without authorization. */
@@ -64,6 +78,21 @@ const isNonnegativeSafeInteger = (value: unknown): value is number => Number.isS
 
 /** The parameter every inference function takes: the most output tokens a caller allows (`MAX_TOKENS_PARAMETER` in stellarium-ts). */
 const MAX_TOKENS_PARAMETER = 'maxTokens';
+
+/** The one function a contract's resource has (`CONTRACT_FUNCTION` in stellarium-ts). */
+export const CONTRACT_FUNCTION = 'run';
+
+/**
+ * The largest contract source the registry stores. Nodes accept 64 KiB by default (`maxContractSourceBytes`),
+ * and may raise it, so this leaves room without letting one node fill the database.
+ */
+export const MAX_CONTRACT_SOURCE_BYTES = 256 * 1024;
+
+/** Organization IDs are stored as varchar(64). */
+const MAX_ORGANIZATION_ID_LENGTH = 64;
+
+/** Dot-separated numbers, as RequestScript versions are (`compareVersions` in requestscript). */
+const VERSION_PATTERN = /^\d{1,15}(\.\d{1,15}){0,7}$/;
 
 const isHttpUrl = (value: string): boolean => {
     try {
@@ -106,16 +135,24 @@ function parsePeer(value: unknown): NodePeer | undefined {
     };
 }
 
-/** Absent means fixed, as nodes only send `kind` for inference functions. Any other value is malformed. */
+/** Absent means fixed, as nodes only send `kind` for inference functions and contracts. Any other value is malformed. */
 function parseKind(value: unknown): NodeFunction['kind'] | undefined {
     if (value === undefined || value === null) return 'fixed';
-    return value === 'fixed' || value === 'inference' ? value : undefined;
+    return value === 'fixed' || value === 'inference' || value === 'contract' ? value : undefined;
 }
 
-/** A fixed function is priced per call, an inference function per million input and output tokens. */
+/**
+ * A fixed function is priced per call, an inference function per million input and output tokens, and a
+ * contract per million script tokens it executes.
+ */
 function parsePaymentManifest(value: unknown, kind: NodeFunction['kind']): Optional<NodePaymentManifest> {
     if (value === undefined || value === null) return { ok: true };
     if (!isObject(value) || !isNonEmptyString(value.recipientOrganizationId)) return { ok: false };
+    if (kind === 'contract') {
+        const price = value.priceMicroUsdPerMillionTokens;
+        if (!isNonnegativeSafeInteger(price)) return { ok: false };
+        return { ok: true, value: { priceMicroUsdPerMillionTokens: price, recipientOrganizationId: value.recipientOrganizationId } };
+    }
     if (kind === 'inference') {
         const { inputCostMicroUsdPerMillionTokens: input, outputCostMicroUsdPerMillionTokens: output } = value;
         if (!isNonnegativeSafeInteger(input) || !isNonnegativeSafeInteger(output)) return { ok: false };
@@ -147,6 +184,8 @@ function parseFunction(value: unknown): NodeFunction | undefined {
     }
     const paymentManifest = parsePaymentManifest(value.paymentManifest, kind);
     if (!paymentManifest.ok) return undefined;
+    // Nodes always price a contract, so every call needs a voucher.
+    if (kind === 'contract' && (value.name !== CONTRACT_FUNCTION || !paymentManifest.value)) return undefined;
 
     return {
         name: value.name,
@@ -176,7 +215,44 @@ export function parseResource(value: unknown): NodeResource | undefined {
         names.add(fn.name);
         functions.push(fn);
     }
+    // A contract's resource has its one function and nothing else.
+    if (functions.some((fn) => fn.kind === 'contract') && functions.length !== 1) return undefined;
     return { path: value.path, name: value.name, baseUrl, website: website.value, description: description.value, functions };
+}
+
+function parseContractParameters(value: unknown): NodeContract['parameters'] | undefined {
+    if (!Array.isArray(value)) return undefined;
+    const parameters: NodeContract['parameters'] = [];
+    for (const parameter of value) {
+        if (!isObject(parameter) || !isNonEmptyString(parameter.name) || !isNonEmptyString(parameter.type)) return undefined;
+        parameters.push({ name: parameter.name, type: parameter.type });
+    }
+    return parameters;
+}
+
+export function parseContract(value: unknown): NodeContract | undefined {
+    if (!isObject(value) || !isNonEmptyString(value.path) || !isNonEmptyString(value.name) || !isNonEmptyString(value.returnType)) return undefined;
+    if (typeof value.version !== 'string' || !VERSION_PATTERN.test(value.version)) return undefined;
+    if (typeof value.source !== 'string' || value.source.length === 0 || Buffer.byteLength(value.source) > MAX_CONTRACT_SOURCE_BYTES) return undefined;
+    const parameters = parseContractParameters(value.parameters);
+    if (!parameters) return undefined;
+    const owner = value.ownerOrganizationId;
+    if (owner !== null && !(isNonEmptyString(owner) && owner.length <= MAX_ORGANIZATION_ID_LENGTH)) return undefined;
+    const description = parseDescription(value.description);
+    if (!description.ok) return undefined;
+    const createdAt = typeof value.createdAt === 'string' ? new Date(value.createdAt) : undefined;
+    if (!createdAt || Number.isNaN(createdAt.getTime())) return undefined;
+    return {
+        path: value.path,
+        name: value.name,
+        version: value.version,
+        source: value.source,
+        parameters,
+        returnType: value.returnType,
+        ownerOrganizationId: owner,
+        description: description.value,
+        createdAt,
+    };
 }
 
 export class NodeClient {
@@ -245,6 +321,17 @@ export class NodeClient {
             if (resource) resources.push(resource);
         }
         return { resources, invalid: raw.length - resources.length };
+    }
+
+    /** Every version of every contract the node hosts, with its source. Malformed entries are skipped and counted in `invalid`. */
+    async getAllContracts(): Promise<{ contracts: NodeContract[]; invalid: number }> {
+        const raw = await this.getAllPages('/contracts', 'contracts');
+        const contracts: NodeContract[] = [];
+        for (const item of raw) {
+            const contract = parseContract(item);
+            if (contract) contracts.push(contract);
+        }
+        return { contracts, invalid: raw.length - contracts.length };
     }
 
     async getAllPeers(): Promise<NodePeer[]> {

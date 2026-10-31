@@ -1,16 +1,17 @@
-import { isInferenceManifest, type ResourceDetail } from '@registry/types';
+import { type ContractVersion, isContractManifest, isInferenceManifest, type ResourceDetail } from '@registry/types';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ContractSection } from '@/components/ContractSection';
 import { CopyButton } from '@/components/CopyButton';
 import { FunctionCard } from '@/components/FunctionCard';
 import terminal from '@/components/Terminal.module.css';
-import { getResource } from '@/lib/api';
+import { getContractVersion, getResource } from '@/lib/api';
 import { formatDate, formatUsd, timeAgo } from '@/lib/format';
 import { pageMetadata } from '@/lib/site';
 import styles from './page.module.css';
 
-type Props = { params: Promise<{ fqn: string }> };
+type Props = { params: Promise<{ fqn: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 async function fqnFrom(params: Props['params']): Promise<string> {
   const { fqn } = await params;
@@ -21,11 +22,21 @@ async function fqnFrom(params: Props['params']): Promise<string> {
   }
 }
 
-/** Per-call costs of the paid fixed functions, and how many paid inference functions are priced per token instead. */
+/** Per-call costs of the paid fixed functions, and how many paid inference functions and contracts are priced per token instead. */
 function pricing(resource: ResourceDetail) {
   const manifests = resource.functions.flatMap((fn) => (fn.paymentManifest ? [fn.paymentManifest] : []));
-  const costs = manifests.flatMap((manifest) => (isInferenceManifest(manifest) ? [] : [manifest.costMicroUsd]));
+  const costs = manifests.flatMap((manifest) => (isInferenceManifest(manifest) || isContractManifest(manifest) ? [] : [manifest.costMicroUsd]));
   return { paid: manifests.length, costs, perToken: manifests.length - costs.length };
+}
+
+/** The contract version `?version=` names, or the latest. `missing` is set when the named one doesn't exist. */
+async function shownVersion(resource: ResourceDetail, requested: string | undefined): Promise<{ shown: Pick<ContractVersion, 'version' | 'source'> | null; missing?: string }> {
+  const contract = resource.contract;
+  if (!contract) return { shown: null };
+  const latest = contract.latestVersion && contract.source !== null ? { version: contract.latestVersion, source: contract.source } : null;
+  if (!requested || requested === contract.latestVersion) return { shown: latest };
+  if (!contract.versions.some((version) => version.version === requested)) return { shown: latest, missing: requested };
+  return { shown: (await getContractVersion(resource.fqn, requested)) ?? latest };
 }
 
 /** One line for search results: how many functions, what they cost, and who may call them. */
@@ -39,6 +50,10 @@ function summarize(resource: ResourceDetail): string {
   ];
   const price = paid === 0 ? 'all free' : `${paid} paid, ${prices.join(', ')}`;
   const access = restricted === 0 ? 'all open to any caller' : `${restricted} restricted to grant holders`;
+  if (resource.contract) {
+    const version = resource.contract.latestVersion ? ` Its latest version is @${resource.contract.latestVersion}, with public source.` : '';
+    return `${resource.fqn} is a Stellarium contract, a RequestScript script priced per token it executes.${version}`;
+  }
   const names = resource.functions.slice(0, 5).map((fn) => `${fn.name}()`);
   const more = resource.functions.length > names.length ? ', …' : '';
   return `${resource.fqn} is a Stellarium resource with ${count}: ${price}; ${access}.${names.length ? ` Functions: ${names.join(', ')}${more}.` : ''}`;
@@ -56,13 +71,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function ResourcePage({ params }: Props) {
+export default async function ResourcePage({ params, searchParams }: Props) {
   const resource = await getResource(await fqnFrom(params));
   if (!resource) notFound();
+  const requested = (await searchParams).version;
+  const { shown, missing } = await shownVersion(resource, Array.isArray(requested) ? requested[0] : requested);
 
   const { paid, costs, perToken } = pricing(resource);
   const restricted = resource.functions.filter((fn) => fn.restricted).length;
   const inference = resource.functions.filter((fn) => fn.kind === 'inference').length;
+  const isContract = resource.contract !== null;
   const perCall =
     costs.length === 0
       ? undefined
@@ -84,7 +102,9 @@ export default async function ResourcePage({ params }: Props) {
         <h1 className={styles.title}>
           <span className={styles.path}>{resource.path}.</span>
           <span className={styles.name}>{resource.name}</span>
+          {resource.contract?.latestVersion && <span className={styles.version}>@{resource.contract.latestVersion}</span>}
         </h1>
+        {isContract && <span className={styles.contractBadge}>contract</span>}
         <CopyButton value={resource.fqn} label="copy fqn" />
       </header>
 
@@ -112,11 +132,21 @@ export default async function ResourcePage({ params }: Props) {
           )}
           <span className={styles.danger}>{restricted} restricted</span>
         </dd>
+        {isContract && (
+          <>
+            <dt>kind</dt>
+            <dd>
+              <span className={styles.violet}>contract</span> · <a href="#source">read the source</a>
+            </dd>
+          </>
+        )}
         <dt>pricing</dt>
         <dd>
           {paid === 0
             ? 'free'
-            : [perCall, perToken > 0 && `${perToken} inference function${perToken === 1 ? '' : 's'} priced per token`].filter(Boolean).join(' · ')}
+            : isContract
+              ? 'per script token executed'
+              : [perCall, perToken > 0 && `${perToken} inference function${perToken === 1 ? '' : 's'} priced per token`].filter(Boolean).join(' · ')}
         </dd>
         <dt>grants</dt>
         <dd>
@@ -139,7 +169,7 @@ export default async function ResourcePage({ params }: Props) {
       </dl>
 
       <section className={terminal.section}>
-        <h2 className={terminal.rule}>functions</h2>
+        <h2 className={terminal.rule}>{isContract ? 'function' : 'functions'}</h2>
         {resource.functions.length === 0 ? (
           <p className={terminal.muted}>This resource declares no functions.</p>
         ) : (
@@ -150,6 +180,8 @@ export default async function ResourcePage({ params }: Props) {
           </div>
         )}
       </section>
+
+      {resource.contract && <ContractSection fqn={resource.fqn} contract={resource.contract} shown={shown} missingVersion={missing} />}
 
       <p className={styles.back}>
         <Link href="/search">cd ..</Link>

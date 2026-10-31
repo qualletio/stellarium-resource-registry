@@ -1,7 +1,7 @@
-import type { NodeInfo, NodeSummary, Page, PaymentManifest, ResourceDetail, ResourceSummary, SearchField, Stats, SyncRun } from "@registry/types";
-import { asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import type { ContractInfo, ContractVersion, ContractVersionSummary, NodeInfo, NodeSummary, Page, PaymentManifest, ResourceDetail, ResourceSummary, SearchField, Stats, SyncRun } from "@registry/types";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/database.js";
-import { functionParametersTable, nodesTable, resourceFunctionsTable, resourcesTable, syncRunsTable } from "../db/schema.js";
+import { contractVersionsTable, functionParametersTable, nodesTable, resourceFunctionsTable, resourcesTable, syncRunsTable } from "../db/schema.js";
 
 export interface SearchOptions {
     q?: string;
@@ -9,6 +9,7 @@ export interface SearchOptions {
     paid: boolean;
     restricted: boolean;
     inference: boolean;
+    contract: boolean;
     offset: number;
     limit: number;
 }
@@ -28,10 +29,38 @@ function rowsOf<T>(result: unknown): T[] {
 type NodeRow = typeof nodesTable.$inferSelect;
 type SyncRunRow = typeof syncRunsTable.$inferSelect;
 type FunctionRow = typeof resourceFunctionsTable.$inferSelect;
+type ContractVersionRow = typeof contractVersionsTable.$inferSelect;
 
-/** Per-token rates for an inference function, a flat cost for a fixed one. Null for a free function. */
+/**
+ * Orders versions numerically per dot-separated segment ('1.10' > '1.9'), missing segments counting as 0,
+ * with the raw string as a tie-break: how a node picks the latest version (`compareVersions` in requestscript).
+ */
+export function compareVersions(a: string, b: string): number {
+    const aSegments = a.split('.');
+    const bSegments = b.split('.');
+    for (let i = 0; i < Math.max(aSegments.length, bSegments.length); i++) {
+        const aValue = BigInt(aSegments[i] ?? '0');
+        const bValue = BigInt(bSegments[i] ?? '0');
+        if (aValue !== bValue) return aValue < bValue ? -1 : 1;
+    }
+    return a < b ? -1 : a > b ? 1 : 0;
+}
+
+const toContractVersionSummary = (row: ContractVersionRow): ContractVersionSummary => ({
+    version: row.version,
+    parameters: row.parameters,
+    returnType: row.returnType,
+    description: row.description,
+    deployedAt: iso(row.deployedAt) as string,
+});
+
+/** Per-token rates for an inference function, a per-script-token price for a contract, a flat cost for a fixed one. Null for a free function. */
 function toPaymentManifest(fn: FunctionRow): PaymentManifest | null {
     if (fn.recipientOrganizationId === null) return null;
+    if (fn.kind === 'contract') {
+        if (fn.priceMicroUsdPerMillionTokens === null) return null;
+        return { priceMicroUsdPerMillionTokens: fn.priceMicroUsdPerMillionTokens, recipientOrganizationId: fn.recipientOrganizationId };
+    }
     if (fn.kind === 'inference') {
         if (fn.inputCostMicroUsdPerMillionTokens === null || fn.outputCostMicroUsdPerMillionTokens === null) return null;
         return {
@@ -83,6 +112,7 @@ interface SummaryRow {
     per_token_count: number | string;
     restricted_count: number | string;
     inference_count: number | string;
+    contract_count: number | string;
     min_cost: number | string | null;
     max_cost: number | string | null;
     matched: string[] | null;
@@ -111,6 +141,7 @@ export class RegistryRepository {
         if (options.paid) conditions.push(sql`agg.paid_count > 0`);
         if (options.restricted) conditions.push(sql`agg.restricted_count > 0`);
         if (options.inference) conditions.push(sql`agg.inference_count > 0`);
+        if (options.contract) conditions.push(sql`agg.contract_count > 0`);
 
         // Exact names first, then prefixes, then substring and function-name matches.
         const order = q === ''
@@ -124,15 +155,16 @@ export class RegistryRepository {
 
         const rows = rowsOf<SummaryRow>(await this.db.execute(sql`
             select r.fqn, r.path, r.name, r.base_url, r.description, r.last_seen_at, r.removed_at,
-                   agg.function_count, agg.paid_count, agg.per_token_count, agg.restricted_count, agg.inference_count,
+                   agg.function_count, agg.paid_count, agg.per_token_count, agg.restricted_count, agg.inference_count, agg.contract_count,
                    agg.min_cost, agg.max_cost, agg.matched
             from resources r
             cross join lateral (
                 select count(*) as function_count,
                        count(f.recipient_organization_id) as paid_count,
-                       count(f.input_cost_micro_usd_per_million_tokens) as per_token_count,
+                       count(f.input_cost_micro_usd_per_million_tokens) + count(f.price_micro_usd_per_million_tokens) as per_token_count,
                        count(*) filter (where f.restricted) as restricted_count,
                        count(*) filter (where f.kind = 'inference') as inference_count,
+                       count(*) filter (where f.kind = 'contract') as contract_count,
                        min(f.cost_micro_usd) as min_cost,
                        max(f.cost_micro_usd) as max_cost,
                        ${matchesFunctions
@@ -160,6 +192,7 @@ export class RegistryRepository {
                 perTokenFunctionCount: Number(row.per_token_count),
                 restrictedFunctionCount: Number(row.restricted_count),
                 inferenceFunctionCount: Number(row.inference_count),
+                isContract: Number(row.contract_count) > 0,
                 lastSeenAt: iso(row.last_seen_at) as string,
                 removedAt: iso(row.removed_at),
             })),
@@ -200,11 +233,37 @@ export class RegistryRepository {
                 restricted: fn.restricted,
                 kind: fn.kind,
             })),
+            contract: functions.some((fn) => fn.kind === 'contract') ? await this.getContractInfo(resource.id, resource.contractSyncedAt) : null,
             host: row.nodes ? toNodeInfo(row.nodes) : null,
             firstSeenAt: iso(resource.firstSeenAt) as string,
             lastSeenAt: iso(resource.lastSeenAt) as string,
             removedAt: iso(resource.removedAt),
         };
+    }
+
+    /** A contract's versions, newest first, and its latest version's source. */
+    private async getContractInfo(resourceId: number, syncedAt: Date | null): Promise<ContractInfo> {
+        const rows = (await this.db.select().from(contractVersionsTable).where(eq(contractVersionsTable.resourceId, resourceId)))
+            .sort((a, b) => compareVersions(b.version, a.version));
+        const latest = rows[0];
+        return {
+            ownerOrganizationId: latest?.ownerOrganizationId ?? null,
+            latestVersion: latest?.version ?? null,
+            versions: rows.map(toContractVersionSummary),
+            source: latest?.source ?? null,
+            syncedAt: iso(syncedAt),
+        };
+    }
+
+    /** One version of a contract, with its source. */
+    async getContractVersion(fqn: string, version: string): Promise<ContractVersion | undefined> {
+        const [row] = await this.db.select({ version: contractVersionsTable })
+            .from(contractVersionsTable)
+            .innerJoin(resourcesTable, eq(resourcesTable.id, contractVersionsTable.resourceId))
+            .where(and(eq(resourcesTable.fqn, fqn), eq(contractVersionsTable.version, version)))
+            .limit(1);
+        if (!row) return undefined;
+        return { fqn, ...toContractVersionSummary(row.version), source: row.version.source };
     }
 
     async getNodes(): Promise<NodeSummary[]> {
@@ -233,6 +292,7 @@ export class RegistryRepository {
                 count(f.recipient_organization_id) as paid_functions,
                 count(*) filter (where f.restricted) as restricted_functions,
                 count(*) filter (where f.kind = 'inference') as inference_functions,
+                count(*) filter (where f.kind = 'contract') as contracts,
                 (select count(*) from nodes) as nodes
             from resource_functions f
             join resources r on r.id = f.resource_id and r.removed_at is null
@@ -248,6 +308,7 @@ export class RegistryRepository {
             paidFunctions: Number(counts.paid_functions),
             restrictedFunctions: Number(counts.restricted_functions),
             inferenceFunctions: Number(counts.inference_functions),
+            contracts: Number(counts.contracts),
             nodes: Number(counts.nodes),
             sourceUrl: this.sourceUrl,
             lastSync: lastSync ? toSyncRun(lastSync) : null,

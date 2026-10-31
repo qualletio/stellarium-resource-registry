@@ -16,6 +16,8 @@ export interface SearchQuery {
     restricted?: boolean;
     /** Only resources with at least one inference function. */
     inference?: boolean;
+    /** Only contracts. */
+    contract?: boolean;
     offset?: number;
     limit?: number;
 }
@@ -46,10 +48,12 @@ export interface ResourceSummary {
     price: PriceRange | null;
     /** Paid functions of either kind. */
     paidFunctionCount: number;
-    /** Paid inference functions, priced per token rather than per call, so not in `price`. */
+    /** Paid inference functions and contracts, priced per token rather than per call, so not in `price`. */
     perTokenFunctionCount: number;
     restrictedFunctionCount: number;
     inferenceFunctionCount: number;
+    /** The resource is a contract: a RequestScript script deployed to its node, with one function, `run`. */
+    isContract: boolean;
     lastSeenAt: string;
     /** Set when the source node stopped listing the resource. */
     removedAt: string | null;
@@ -74,15 +78,62 @@ export interface InferencePaymentManifest {
     recipientOrganizationId: string;
 }
 
-/** A function's `paymentManifest`, as the hosting node publishes it. Its shape follows the function's `kind`. */
-export type PaymentManifest = FixedPaymentManifest | InferencePaymentManifest;
+/** A contract's `paymentManifest`: the hosting node's price per million script tokens the contract executes. */
+export interface ContractPaymentManifest {
+    priceMicroUsdPerMillionTokens: number;
+    recipientOrganizationId: string;
+}
 
-export const FUNCTION_KINDS = ['fixed', 'inference'] as const;
-/** Fixed functions have a flat price. Inference functions run AI inference, take `maxTokens` and are priced per token. */
+/** A function's `paymentManifest`, as the hosting node publishes it. Its shape follows the function's `kind`. */
+export type PaymentManifest = FixedPaymentManifest | InferencePaymentManifest | ContractPaymentManifest;
+
+export const FUNCTION_KINDS = ['fixed', 'inference', 'contract'] as const;
+/**
+ * Fixed functions have a flat price. Inference functions run AI inference, take `maxTokens` and are priced per token.
+ * Contract functions run a contract's latest version, priced per script token it executes.
+ */
 export type FunctionKind = typeof FUNCTION_KINDS[number];
 
 export const isInferenceManifest = (manifest: PaymentManifest): manifest is InferencePaymentManifest =>
     'inputCostMicroUsdPerMillionTokens' in manifest;
+
+export const isContractManifest = (manifest: PaymentManifest): manifest is ContractPaymentManifest =>
+    'priceMicroUsdPerMillionTokens' in manifest;
+
+/** A RequestScript type string, e.g. `int32` or `[]string`. */
+export interface ContractParameter {
+    name: string;
+    type: string;
+}
+
+/** One deployed version of a contract, without its source. Versions are immutable on the node. */
+export interface ContractVersionSummary {
+    version: string;
+    parameters: ContractParameter[];
+    returnType: string;
+    description: string | null;
+    /** When the hosting node says the version was deployed. */
+    deployedAt: string;
+}
+
+/** One version of a contract, with its RequestScript source. */
+export interface ContractVersion extends ContractVersionSummary {
+    fqn: string;
+    source: string;
+}
+
+export interface ContractInfo {
+    /** The organization that deployed it, which owns every version. Null when the node's admin did. */
+    ownerOrganizationId: string | null;
+    /** The version calls run: the highest version number. Null until the registry has read the contract's versions from its host. */
+    latestVersion: string | null;
+    /** Newest first. Empty until the registry has read them from the host. */
+    versions: ContractVersionSummary[];
+    /** The latest version's source. */
+    source: string | null;
+    /** When the registry last read the contract's versions from its host. Null if it never could. */
+    syncedAt: string | null;
+}
 
 export interface ResourceFunction {
     name: string;
@@ -124,6 +175,8 @@ export interface ResourceDetail {
     website: string | null;
     description: string | null;
     functions: ResourceFunction[];
+    /** Set when the resource is a contract. */
+    contract: ContractInfo | null;
     /** The node hosting the resource, when the registry knows it. */
     host: NodeInfo | null;
     firstSeenAt: string;
@@ -149,6 +202,7 @@ export interface Stats {
     paidFunctions: number;
     restrictedFunctions: number;
     inferenceFunctions: number;
+    contracts: number;
     nodes: number;
     sourceUrl: string;
     lastSync: SyncRun | null;

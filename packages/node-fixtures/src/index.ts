@@ -1,12 +1,16 @@
 // Real stellarium-ts nodes for the local node apps and the API's tests, plus sample resources
-// that cover every combination the registry shows: free and paid, open and restricted, fixed and inference.
-import { generateKeyPairSync } from 'node:crypto';
+// that cover every combination the registry shows: free and paid, open and restricted, fixed, inference
+// and contract.
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import Fastify from 'fastify';
 import { StellariumNode, type StellariumResource, type StellariumResourceFunction } from 'stellarium-ts';
 
 /** The operator organization every fixture node is enrolled in, so the recipient of its paid functions. */
 export const SAMPLE_ORGANIZATION = 'org_sample';
+
+/** What every fixture node charges per million script tokens its contracts execute, as the operator reports it. */
+export const SAMPLE_CONTRACT_PRICE = 2_000_000;
 
 /** A function as declared, before the node gives it an implementation. */
 export type FunctionSpec = Omit<StellariumResourceFunction, 'exec' | 'id'>;
@@ -109,16 +113,71 @@ export const PEER_RESOURCES: ResourceSpec[] = [
     ] },
 ];
 
+/** A contract to deploy: RequestScript source declaring `contract path.Name@version(...): type`. */
+export interface ContractSpec {
+    source: string;
+    description?: string;
+}
+
+/** Contracts for the node the registry syncs from. Outlook has two versions; calls run the second. */
+export const SOURCE_CONTRACTS: ContractSpec[] = [
+    {
+        description: 'Today\'s weather in words.',
+        source: `contract com.example.Outlook(city: string): string {
+    const weather: com.example.Weather
+    const today = weather.temperature(city: city)
+    if (today.error != null) {
+        return "unknown"
+    }
+    return "\${today.value} degrees"
+}`,
+    },
+    {
+        description: 'Today\'s weather in words, with a forecast.',
+        source: `contract com.example.Outlook@2(city: string, days: int32): string {
+    const weather: com.example.Weather
+    const today = weather.temperature(city: city)
+    if (today.error != null) {
+        return "unknown"
+    }
+    const ahead = weather.forecast(city: city, days: days)
+    if (ahead.error != null) {
+        return "\${today.value} degrees"
+    }
+    return "\${today.value} degrees, then \${ahead.value}"
+}`,
+    },
+];
+
+/** Contracts for the peer node. Visits keeps state between calls. */
+export const PEER_CONTRACTS: ContractSpec[] = [
+    {
+        description: 'Counts how often each book is viewed.',
+        source: `contract org.archive.Visits(bookId: string): int32 {
+    var state(bookId) views: int32 = 0
+
+    views = views + 1
+    return views
+}`,
+    },
+];
+
 export interface RunningNode {
     baseUrl: string;
     publicKey: string;
     /** `path.Name.function` for every call that reached a function body. */
     executed: string[];
+    /** Deploys a contract with the node's API key. Throws if the node refuses it. */
+    deployContract: (contract: ContractSpec) => Promise<void>;
+    /** Deletes `path.Name@version`, or every version of `path.Name`. */
+    deleteContract: (ref: string) => Promise<void>;
     close: () => Promise<void>;
 }
 
 export interface StartNodeOptions {
     resources: ResourceSpec[];
+    /** Deployed in order once the node listens, before `startNode` resolves. */
+    contracts?: ContractSpec[];
     /** Issue a grant to anyone who asks. Without it, the node refuses grant requests. */
     approveGrants?: boolean;
     /** Learn this node's peers and resources at start. */
@@ -150,7 +209,7 @@ export function freePort(): Promise<number> {
  */
 async function startOperator(): Promise<{ url: string; close: () => Promise<void> }> {
     const operator = Fastify();
-    operator.post('/v1/nodes/session', async () => ({ organizationId: SAMPLE_ORGANIZATION }));
+    operator.post('/v1/nodes/session', async () => ({ organizationId: SAMPLE_ORGANIZATION, priceMicroUsdPerMillionTokens: SAMPLE_CONTRACT_PRICE }));
     operator.setNotFoundHandler(async (_request, reply) => reply.code(503).send({ error: 'The fixture operator only enrolls nodes' }));
     const address = await operator.listen({ port: 0, host: '127.0.0.1' });
     return { url: `${address}/v1`, close: () => operator.close() };
@@ -165,6 +224,8 @@ export async function startNode(options: StartNodeOptions): Promise<RunningNode>
         privateKeyEncoding: { type: 'pkcs8', format: 'der' },
     });
     const executed: string[] = [];
+    // Only this process deploys contracts, so a random key per node is enough.
+    const apiKey = randomBytes(24).toString('base64url');
 
     const node = new StellariumNode();
     for (const [index, spec] of options.resources.entries()) {
@@ -189,7 +250,9 @@ export async function startNode(options: StartNodeOptions): Promise<RunningNode>
     }
 
     const operator = await startOperator();
-    const fastify = Fastify({ logger: options.logger ?? false });
+    // A deploy announces the node to its peers in the background, so a peer may still hold that connection
+    // when it closes. Dropping every connection keeps close from waiting out the keep-alive.
+    const fastify = Fastify({ logger: options.logger ?? false, forceCloseConnections: true });
     fastify.addHook('onClose', operator.close);
     // `start` listens before it bootstraps, so a failed bootstrap would otherwise keep the port.
     await node.start(fastify, {
@@ -201,11 +264,32 @@ export async function startNode(options: StartNodeOptions): Promise<RunningNode>
         databasePath: ':memory:',
         startingPeer: options.startingPeer,
         operatorUrl: operator.url,
+        apiKey,
         approveGrant: options.approveGrants ? async () => ({ lifetimeMs: 60 * 60_000 }) : undefined,
     }).catch(async (error: unknown) => {
         await fastify.close();
         throw error;
     });
 
-    return { baseUrl, publicKey: publicKey.toString('base64url'), executed, close: () => fastify.close() };
+    // The node's own address, since `baseUrl` may be a name only other containers resolve.
+    const local = `http://${host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host}:${port}/v1/contracts`;
+    const admin = async (method: string, path: string, body?: unknown) => {
+        const response = await fetch(`${local}${path}`, {
+            method,
+            headers: { authorization: `Bearer ${apiKey}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+            body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        if (!response.ok) throw new Error(`${method} /v1/contracts${path} returned ${response.status}: ${await response.text()}`);
+    };
+    const deployContract = (contract: ContractSpec) => admin('POST', '', contract);
+    const deleteContract = (ref: string) => admin('DELETE', `/${encodeURIComponent(ref)}`);
+
+    try {
+        for (const contract of options.contracts ?? []) await deployContract(contract);
+    } catch (error) {
+        await fastify.close();
+        throw error;
+    }
+
+    return { baseUrl, publicKey: publicKey.toString('base64url'), executed, deployContract, deleteContract, close: () => fastify.close() };
 }
