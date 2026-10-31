@@ -1,20 +1,24 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Database } from '../db/database.js';
-import { nodesTable, resourceFunctionsTable, resourcesTable } from '../db/schema.js';
+import { contractVersionsTable, nodesTable, resourceFunctionsTable, resourcesTable } from '../db/schema.js';
 import {
     described,
     freePort,
     open,
+    PEER_CONTRACTS,
     PEER_RESOURCES,
     paid,
     type RunningNode,
     restricted,
+    SAMPLE_CONTRACT_PRICE,
     SAMPLE_ORGANIZATION,
+    SOURCE_CONTRACTS,
     SOURCE_RESOURCES,
     type StartNodeOptions,
     startNode,
 } from '@registry/node-fixtures';
+import { NodeClient } from '../node/nodeClient.js';
 import { RegistryRepository } from '../registry/registryRepository.js';
 import { createTestDatabase } from '../testing.js';
 import { SyncService } from './syncService.js';
@@ -109,7 +113,7 @@ describe('SyncService against a real stellarium-ts node', () => {
         await startSource({ resources: [weather] });
         expect(await service.sync()).toMatchObject({ resourcesSeen: 1, resourcesAdded: 0, resourcesRemoved: 1 });
         expect((await repository.getResource('io.example.Ledger'))?.removedAt).not.toBeNull();
-        const live = await repository.search({ in: 'all', paid: false, restricted: false, inference: false, offset: 0, limit: 10 });
+        const live = await repository.search({ in: 'all', paid: false, restricted: false, inference: false, contract: false, offset: 0, limit: 10 });
         expect(live.items.map((r) => r.fqn)).toEqual(['com.example.Weather']);
 
         await startSource({ resources: [weather, ledger] });
@@ -141,7 +145,7 @@ describe('SyncService against a real stellarium-ts node', () => {
         const detail = await repository.getResource('com.example.Weather');
         expect(detail).toMatchObject({ website: 'https://weather.example', description: 'Forecasts' });
         expect(detail?.functions[0]).toMatchObject({ description: 'Degrees Celsius', parameters: [{ name: 'city', description: 'A city name' }] });
-        expect((await repository.search({ in: 'all', paid: false, restricted: false, inference: false, offset: 0, limit: 10 })).items[0].description).toBe('Forecasts');
+        expect((await repository.search({ in: 'all', paid: false, restricted: false, inference: false, contract: false, offset: 0, limit: 10 })).items[0].description).toBe('Forecasts');
 
         await startSource({ resources: [weather] });
         await service.sync();
@@ -218,6 +222,94 @@ describe('SyncService against a real stellarium-ts node', () => {
         expect(run.error).toMatch(/failed/);
         expect(await db.select({ fqn: resourcesTable.fqn }).from(resourcesTable).where(eq(resourcesTable.fqn, 'io.example.Ledger'))).toHaveLength(1);
         expect((await repository.getResource('io.example.Ledger'))?.removedAt).toBeNull();
+    });
+
+    it('reads each contract\'s versions and source from its own host, whether the source or a peer', async () => {
+        const peer = await startNode({ resources: PEER_RESOURCES, contracts: PEER_CONTRACTS });
+        const source = await startNode({ resources: SOURCE_RESOURCES, contracts: SOURCE_CONTRACTS, approveGrants: true, startingPeer: peer.baseUrl, port });
+        nodes = [peer, source];
+
+        expect(await service.sync()).toMatchObject({ status: 'succeeded', resourcesSeen: 9 });
+        const outlook = await repository.getResource('com.example.Outlook');
+        expect(outlook?.functions).toMatchObject([{
+            name: 'run',
+            kind: 'contract',
+            parameters: [{ name: 'city', type: 'string' }, { name: 'days', type: 'int32' }],
+            paymentManifest: { priceMicroUsdPerMillionTokens: SAMPLE_CONTRACT_PRICE, recipientOrganizationId: SAMPLE_ORGANIZATION },
+        }]);
+        expect(outlook?.contract).toMatchObject({ latestVersion: '2', source: SOURCE_CONTRACTS[1].source, ownerOrganizationId: null });
+        expect(outlook?.contract?.versions.map((v) => [v.version, v.description])).toEqual([
+            ['2', SOURCE_CONTRACTS[1].description],
+            ['1', SOURCE_CONTRACTS[0].description],
+        ]);
+
+        // The source only lists the peer's contract. Its versions come from the peer.
+        const visits = await repository.getResource('org.archive.Visits');
+        expect(visits?.baseUrl).toBe(peer.baseUrl);
+        expect(visits?.contract).toMatchObject({ latestVersion: '1', source: PEER_CONTRACTS[0].source });
+        expect((await repository.getStats()).contracts).toBe(2);
+        expect((await repository.search({ in: 'all', paid: false, restricted: false, inference: false, contract: true, offset: 0, limit: 10 })).items.map((r) => r.fqn))
+            .toEqual(['com.example.Outlook', 'org.archive.Visits']);
+        expect([...source.executed, ...peer.executed]).toEqual([]);
+    });
+
+    it('follows versions the host deletes, and marks a contract removed once it is gone', async () => {
+        const node = await startSource({ resources: [weather], contracts: SOURCE_CONTRACTS });
+        await service.sync();
+        await node.deleteContract('com.example.Outlook@2');
+        await service.sync();
+        const outlook = await repository.getResource('com.example.Outlook');
+        expect(outlook?.contract?.versions.map((v) => v.version)).toEqual(['1']);
+        expect(outlook?.functions[0].parameters.map((p) => p.name)).toEqual(['city']);
+
+        await node.deleteContract('com.example.Outlook');
+        expect(await service.sync()).toMatchObject({ resourcesRemoved: 1 });
+        const removed = await repository.getResource('com.example.Outlook');
+        expect(removed?.removedAt).not.toBeNull();
+        // Kept, like a removed resource's functions, so the page still shows what it ran.
+        expect(removed?.contract?.latestVersion).toBe('1');
+    });
+
+    it('keeps a contract\'s stored versions when its host can\'t be read', async () => {
+        let failing = false;
+        const node = await startSource({ resources: [weather], contracts: SOURCE_CONTRACTS });
+        service = new SyncService(db, {
+            sourceUrl,
+            grantProbeIntervalMs: 60_000,
+            clientFor: (baseUrl) => new NodeClient(baseUrl, 10_000, async (input, init) =>
+                failing && String(input).includes('/v1/contracts') ? new Response('{}', { status: 503 }) : fetch(input, init)),
+        });
+        await service.sync();
+        const syncedAt = (await repository.getResource('com.example.Outlook'))?.contract?.syncedAt;
+
+        failing = true;
+        await node.deleteContract('com.example.Outlook@2');
+        expect(await service.sync()).toMatchObject({ status: 'succeeded' });
+        const outlook = await repository.getResource('com.example.Outlook');
+        expect(outlook?.contract?.versions.map((v) => v.version)).toEqual(['2', '1']);
+        expect(outlook?.contract?.syncedAt).toBe(syncedAt);
+    });
+
+    it('only believes a contract\'s own host about its versions', async () => {
+        const peer = await startNode({ resources: PEER_RESOURCES, contracts: PEER_CONTRACTS });
+        nodes = [peer, await startNode({ resources: [weather], contracts: SOURCE_CONTRACTS, startingPeer: peer.baseUrl, port })];
+        const forged = { ...PEER_CONTRACTS[0], path: 'org.archive', name: 'Visits', version: '9', source: 'contract org.archive.Visits@9(bookId: string): int32 {\n  return 0\n}', parameters: [], returnType: 'int32', ownerOrganizationId: null, createdAt: new Date().toISOString() };
+        // The source lists its own contract's versions, and claims a newer version of the peer's.
+        service = new SyncService(db, {
+            sourceUrl,
+            grantProbeIntervalMs: 60_000,
+            clientFor: (baseUrl) => new NodeClient(baseUrl, 10_000, async (input, init) => {
+                const response = await fetch(input, init);
+                if (baseUrl !== sourceUrl || !String(input).includes('/v1/contracts')) return response;
+                const { contracts } = await response.json() as { contracts: unknown[] };
+                return Response.json({ contracts: [...contracts, forged], nextOffset: null });
+            }),
+        });
+        await service.sync();
+        expect((await repository.getResource('com.example.Outlook'))?.contract?.latestVersion).toBe('2');
+        const visits = await repository.getResource('org.archive.Visits');
+        expect(visits?.contract).toMatchObject({ latestVersion: '1', source: PEER_CONTRACTS[0].source });
+        expect((await db.select({ version: contractVersionsTable.version }).from(contractVersionsTable)).map((row) => row.version).sort()).toEqual(['1', '1', '2']);
     });
 
     it('joins a sync already in progress', async () => {

@@ -15,7 +15,7 @@ type Params = Record<string, string | string[] | undefined>;
 
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
-function parseQuery(params: Params): Required<Pick<SearchQuery, 'in' | 'paid' | 'restricted' | 'inference' | 'offset'>> & { q: string } {
+function parseQuery(params: Params): Required<Pick<SearchQuery, 'in' | 'paid' | 'restricted' | 'inference' | 'contract' | 'offset'>> & { q: string } {
   const field = first(params.in);
   const offset = Number(first(params.offset));
   return {
@@ -24,6 +24,7 @@ function parseQuery(params: Params): Required<Pick<SearchQuery, 'in' | 'paid' | 
     paid: first(params.paid) === 'true',
     restricted: first(params.restricted) === 'true',
     inference: first(params.inference) === 'true',
+    contract: first(params.contract) === 'true',
     offset: Number.isInteger(offset) && offset > 0 ? offset : 0,
   };
 }
@@ -35,6 +36,7 @@ function commandFor(query: ReturnType<typeof parseQuery>): string {
   if (query.paid) parts.push('--paid');
   if (query.restricted) parts.push('--restricted');
   if (query.inference) parts.push('--inference');
+  if (query.contract) parts.push('--contract');
   return parts.join(' ');
 }
 
@@ -42,7 +44,7 @@ function commandFor(query: ReturnType<typeof parseQuery>): string {
 export async function generateMetadata({ searchParams }: { searchParams: Promise<Params> }): Promise<Metadata> {
   const filtered = Object.keys(await searchParams).length > 0;
   return {
-    ...pageMetadata({ title: 'search', description: 'Search Stellarium resources by path, name or function, and filter by price and access.', path: '/search' }),
+    ...pageMetadata({ title: 'search', description: 'Search Stellarium resources and contracts by path, name or function, and filter by price and access.', path: '/search' }),
     ...(filtered && { robots: { index: false, follow: true } }),
   };
 }

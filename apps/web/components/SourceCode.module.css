@@ -1,0 +1,52 @@
+.code {
+  margin: 0;
+  padding: 10px 12px 10px 0;
+  overflow-x: auto;
+  color: var(--fg-strong);
+  font-size: 13px;
+  line-height: 1.55;
+  counter-reset: line;
+  tab-size: 4;
+}
+
+.line {
+  display: block;
+  min-height: 1.55em;
+  white-space: pre;
+}
+
+.line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 5ch;
+  margin-right: 12px;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+}
+
+.comment {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.string,
+.number {
+  color: var(--amber);
+}
+
+.keyword {
+  color: var(--violet);
+}
+
+.literal,
+.builtin {
+  color: var(--accent);
+}
+
+.type {
+  color: var(--cyan);
+}

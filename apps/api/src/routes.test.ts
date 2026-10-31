@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from './app.js';
-import { inference, open, paid, perToken, type RunningNode, restricted, SAMPLE_ORGANIZATION, startNode } from '@registry/node-fixtures';
+import { inference, open, paid, perToken, type RunningNode, restricted, SAMPLE_CONTRACT_PRICE, SAMPLE_ORGANIZATION, startNode } from '@registry/node-fixtures';
 import { SyncService } from './sync/syncService.js';
 import { createTestDatabase } from './testing.js';
 
@@ -30,6 +30,11 @@ describe('routes', () => {
                     paid('classify', 'text: string', 'string', 500),
                 ] },
             ],
+            contracts: [
+                { source: 'contract com.example.Sum(a: int32, b: int32): int32 {\n  return a + b\n}', description: 'Adds two numbers' },
+                { source: 'contract com.example.Sum@1.10(a: int32, b: int32, c: int32): int32 {\n  return a + b + c\n}', description: 'Adds three numbers' },
+                { source: 'contract com.example.Sum@1.9(a: int32): int32 {\n  return a\n}' },
+            ],
         });
         const syncService = new SyncService(database.db, { sourceUrl: node.baseUrl, grantProbeIntervalMs: 60_000 });
         app = await buildApp({ db: database.db, syncService, sourceUrl: node.baseUrl, adminApiKey: 'admin-key', webOrigin: 'http://localhost:3000' });
@@ -49,7 +54,7 @@ describe('routes', () => {
 
     it('reports stats', async () => {
         const { body } = await get('/v1/stats');
-        expect(body).toMatchObject({ resources: 5, functions: 8, paidFunctions: 4, restrictedFunctions: 1, inferenceFunctions: 2, nodes: 1, lastSync: { status: 'succeeded' } });
+        expect(body).toMatchObject({ resources: 6, functions: 9, paidFunctions: 5, restrictedFunctions: 1, inferenceFunctions: 2, contracts: 1, nodes: 1, lastSync: { status: 'succeeded' } });
     });
 
     it('ranks an exact name above prefix and substring matches', async () => {
@@ -72,11 +77,12 @@ describe('routes', () => {
         expect((await get('/v1/resources?q=%25')).body.items).toEqual([]);
     });
 
-    it('filters to paid, restricted or inference resources', async () => {
+    it('filters to paid, restricted, inference or contract resources', async () => {
         const fqns = async (url: string) => (await get(url)).body.items.map((r: { fqn: string }) => r.fqn).sort();
-        expect(await fqns('/v1/resources?paid=true')).toEqual(['ai.example.Assistant', 'com.example.Weather']);
+        expect(await fqns('/v1/resources?paid=true')).toEqual(['ai.example.Assistant', 'com.example.Sum', 'com.example.Weather']);
         expect(await fqns('/v1/resources?restricted=true')).toEqual(['io.example.Ledger']);
         expect(await fqns('/v1/resources?inference=true')).toEqual(['ai.example.Assistant']);
+        expect(await fqns('/v1/resources?contract=true')).toEqual(['com.example.Sum']);
     });
 
     it('keeps per-token functions out of the per-call price range', async () => {
@@ -104,12 +110,54 @@ describe('routes', () => {
         expect(body.functions.map((fn: { kind: string }) => fn.kind)).toEqual(['inference', 'inference', 'fixed']);
     });
 
+    it('returns a contract with its versions, newest first, and the latest source', async () => {
+        const summary = (await get('/v1/resources?q=com.example.Sum')).body.items[0];
+        expect(summary).toMatchObject({ isContract: true, functionCount: 1, paidFunctionCount: 1, perTokenFunctionCount: 1, price: null });
+
+        const { body } = await get('/v1/resources/com.example.Sum');
+        expect(body.functions).toEqual([{
+            name: 'run',
+            returnType: 'int32',
+            description: null,
+            parameters: [{ name: 'a', type: 'int32', description: null }, { name: 'b', type: 'int32', description: null }, { name: 'c', type: 'int32', description: null }],
+            paymentManifest: { priceMicroUsdPerMillionTokens: SAMPLE_CONTRACT_PRICE, recipientOrganizationId: SAMPLE_ORGANIZATION },
+            restricted: false,
+            kind: 'contract',
+        }]);
+        // 1.10 is newer than 1.9, which was deployed after it.
+        expect(body.contract).toMatchObject({
+            ownerOrganizationId: null,
+            latestVersion: '1.10',
+            source: 'contract com.example.Sum@1.10(a: int32, b: int32, c: int32): int32 {\n  return a + b + c\n}',
+        });
+        expect(body.contract.syncedAt).not.toBeNull();
+        expect(body.contract.versions.map((v: { version: string }) => v.version)).toEqual(['1.10', '1.9', '1']);
+        expect(body.contract.versions[2]).toEqual({
+            version: '1',
+            parameters: [{ name: 'a', type: 'int32' }, { name: 'b', type: 'int32' }],
+            returnType: 'int32',
+            description: 'Adds two numbers',
+            deployedAt: expect.any(String),
+        });
+        expect(body.contract.versions[2]).not.toHaveProperty('source');
+
+        expect((await get('/v1/resources/com.example.Weather')).body.contract).toBeNull();
+    });
+
+    it('returns one version of a contract with its source', async () => {
+        const { status, body } = await get('/v1/resources/com.example.Sum/versions/1');
+        expect(status).toBe(200);
+        expect(body).toMatchObject({ fqn: 'com.example.Sum', version: '1', source: 'contract com.example.Sum(a: int32, b: int32): int32 {\n  return a + b\n}' });
+        expect((await get('/v1/resources/com.example.Sum/versions/3')).status).toBe(404);
+        expect((await get('/v1/resources/com.example.Weather/versions/1')).status).toBe(404);
+    });
+
     it('pages results', async () => {
         const first = await get('/v1/resources?limit=3');
         expect(first.body.items).toHaveLength(3);
         expect(first.body.nextOffset).toBe(3);
         const last = await get('/v1/resources?limit=3&offset=3');
-        expect(last.body.items).toHaveLength(2);
+        expect(last.body.items).toHaveLength(3);
         expect(last.body.nextOffset).toBeNull();
         expect((await get('/v1/resources?limit=1000')).status).toBe(400);
     });
@@ -124,8 +172,8 @@ describe('routes', () => {
     });
 
     it('lists nodes and sync runs', async () => {
-        expect((await get('/v1/nodes')).body.items).toMatchObject([{ baseUrl: node.baseUrl, isSource: true, resourceCount: 5 }]);
-        expect((await get('/v1/sync/runs')).body.items[0]).toMatchObject({ status: 'succeeded', resourcesSeen: 5 });
+        expect((await get('/v1/nodes')).body.items).toMatchObject([{ baseUrl: node.baseUrl, isSource: true, resourceCount: 6 }]);
+        expect((await get('/v1/sync/runs')).body.items[0]).toMatchObject({ status: 'succeeded', resourcesSeen: 6 });
     });
 
     it('requires the admin key to trigger a sync', async () => {
@@ -133,6 +181,6 @@ describe('routes', () => {
         expect((await app.inject({ method: 'POST', url: '/v1/sync', headers: { authorization: 'Bearer wrong' } })).statusCode).toBe(401);
         const response = await app.inject({ method: 'POST', url: '/v1/sync', headers: { authorization: 'Bearer admin-key' } });
         expect(response.statusCode).toBe(200);
-        expect(response.json()).toMatchObject({ status: 'succeeded', resourcesSeen: 5, resourcesAdded: 0 });
+        expect(response.json()).toMatchObject({ status: 'succeeded', resourcesSeen: 6, resourcesAdded: 0 });
     });
 });

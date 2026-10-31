@@ -1,4 +1,4 @@
-import { bigint, boolean, index, integer, pgTable, text, timestamp, unique, varchar } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, jsonb, pgTable, text, timestamp, unique, varchar } from "drizzle-orm/pg-core";
 
 /**
  * Stellarium nodes the registry knows: the source node it syncs from, the source's peers, and
@@ -34,13 +34,15 @@ export const resourcesTable = pgTable("resources", {
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
   // Set when the source node stops listing the resource. Kept so a flaky sync doesn't wipe the registry.
   removedAt: timestamp("removed_at", { withTimezone: true }),
+  // For a contract: when its versions were last read from its host. Null if they never could be.
+  contractSyncedAt: timestamp("contract_synced_at", { withTimezone: true }),
 }, (table) => [
   index("resources_fqn_trgm_idx").using("gin", table.fqn.op("gin_trgm_ops")),
   index("resources_name_trgm_idx").using("gin", table.name.op("gin_trgm_ops")),
 ]);
 
 // Mirrors `FUNCTION_KINDS` in @registry/types.
-export const FUNCTION_KINDS = ['fixed', 'inference'] as const;
+export const FUNCTION_KINDS = ['fixed', 'inference', 'contract'] as const;
 
 export const resourceFunctionsTable = pgTable("resource_functions", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
@@ -51,10 +53,11 @@ export const resourceFunctionsTable = pgTable("resource_functions", {
   restricted: boolean().notNull().default(false),
   kind: varchar({ length: 16, enum: FUNCTION_KINDS }).notNull().default('fixed'),
   // The function's paymentManifest. All null for a free function. A paid fixed function has a cost,
-  // a paid inference function both rates.
+  // a paid inference function both rates, a contract its price per million script tokens.
   costMicroUsd: bigint("cost_micro_usd", { mode: 'number' }),
   inputCostMicroUsdPerMillionTokens: bigint("input_cost_micro_usd_per_million_tokens", { mode: 'number' }),
   outputCostMicroUsdPerMillionTokens: bigint("output_cost_micro_usd_per_million_tokens", { mode: 'number' }),
+  priceMicroUsdPerMillionTokens: bigint("price_micro_usd_per_million_tokens", { mode: 'number' }),
   recipientOrganizationId: varchar("recipient_organization_id", { length: 64 }),
   // Order the node listed the function in.
   position: integer().notNull(),
@@ -72,6 +75,23 @@ export const functionParametersTable = pgTable("function_parameters", {
   position: integer().notNull(),
 }, (table) => [
   index("function_parameters_function_id_idx").on(table.functionId),
+]);
+
+/** The deployed versions of a contract, with their source, as its host's `GET /v1/contracts` lists them. */
+export const contractVersionsTable = pgTable("contract_versions", {
+  id: integer().primaryKey().generatedAlwaysAsIdentity(),
+  resourceId: integer("resource_id").notNull().references(() => resourcesTable.id, { onDelete: 'cascade' }),
+  version: varchar({ length: 64 }).notNull(),
+  source: text().notNull(),
+  // `[{ name, type }]`, RequestScript type strings.
+  parameters: jsonb().$type<{ name: string; type: string }[]>().notNull(),
+  returnType: text("return_type").notNull(),
+  ownerOrganizationId: varchar("owner_organization_id", { length: 64 }),
+  description: text(),
+  // `createdAt` as the host lists it.
+  deployedAt: timestamp("deployed_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  unique("contract_versions_resource_id_version_unique").on(table.resourceId, table.version),
 ]);
 
 export const SYNC_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;

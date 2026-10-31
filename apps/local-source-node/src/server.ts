@@ -1,7 +1,7 @@
 // The node the registry syncs from. It bootstraps from STARTING_PEER, so it lists the peer's
 // resources alongside its own, and it issues grants to anyone who asks.
 import { setTimeout as sleep } from 'node:timers/promises';
-import { SOURCE_RESOURCES, startNode } from '@registry/node-fixtures';
+import { SOURCE_CONTRACTS, SOURCE_RESOURCES, startNode } from '@registry/node-fixtures';
 
 // Defaults to the local peer node. Set STARTING_PEER to an empty string to run standalone.
 const startingPeer = (process.env.STARTING_PEER ?? 'http://127.0.0.1:3101').replace(/\/+$/, '') || undefined;
@@ -24,6 +24,7 @@ if (startingPeer) await waitForPeer(startingPeer);
 
 const node = await startNode({
     resources: SOURCE_RESOURCES,
+    contracts: SOURCE_CONTRACTS,
     approveGrants: true,
     startingPeer,
     port: Number(process.env.PORT ?? 3100),

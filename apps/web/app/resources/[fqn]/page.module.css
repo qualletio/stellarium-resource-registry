@@ -29,6 +29,22 @@
   text-shadow: var(--glow);
 }
 
+.version {
+  color: var(--violet);
+  font-weight: 400;
+}
+
+.contractBadge {
+  font-size: 12px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  color: var(--violet);
+}
+
+.violet {
+  color: var(--violet);
+}
+
 .description {
   margin: 12px 0 0;
   max-width: 80ch;

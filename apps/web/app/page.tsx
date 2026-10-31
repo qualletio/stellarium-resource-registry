@@ -40,11 +40,11 @@ export default async function HomePage() {
           <Banner lines={['stellarium', 'registry']} label="Stellarium Registry" />
         </h1>
         <p className={styles.tagline}>
-          A public index of the resources on the Stellarium network. Find a resource by path, name or function, and see what each
-          call costs and who may make it.
+          A public index of the resources and contracts on the Stellarium network. Find a resource by path, name or function, see
+          what each call costs and who may make it, and read every contract&apos;s source.
           <span className={terminal.cursor} aria-hidden="true" />
         </p>
-        <SearchPrompt initial={{ q: '', in: 'all', paid: false, restricted: false, inference: false }} autoFocus />
+        <SearchPrompt initial={{ q: '', in: 'all', paid: false, restricted: false, inference: false, contract: false }} autoFocus />
       </section>
 
       <section className={terminal.section}>
@@ -82,6 +82,12 @@ export default async function HomePage() {
           <dd>
             A function that runs AI inference. It takes <code>maxTokens</code>, the most output tokens you allow. Before a paid call,
             the host estimates the input tokens, and your node caps what it signs for at that estimate plus <code>maxTokens</code>.
+          </dd>
+          <dt>contract</dt>
+          <dd>
+            A RequestScript script deployed to a node, served as a resource with one function, <code>run</code>. It costs a rate per
+            million script tokens it executes, and its own paid calls are paid by its caller. Versions are immutable and their
+            source is public, so the registry shows every version.
           </dd>
           <dt>restricted</dt>
           <dd>

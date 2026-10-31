@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { and, desc, eq, inArray, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import type { Database } from "../db/database.js";
-import { functionParametersTable, nodesTable, resourceFunctionsTable, resourcesTable, syncRunsTable } from "../db/schema.js";
-import { NodeClient, type NodePaymentManifest, type NodePeer, type NodeResource } from "../node/nodeClient.js";
+import { contractVersionsTable, functionParametersTable, nodesTable, resourceFunctionsTable, resourcesTable, syncRunsTable } from "../db/schema.js";
+import { NodeClient, type NodeContract, type NodePaymentManifest, type NodePeer, type NodeResource } from "../node/nodeClient.js";
 
 export type SyncRunRow = typeof syncRunsTable.$inferSelect;
 
@@ -14,7 +14,7 @@ export interface SyncLogger {
 export interface SyncServiceOptions {
     sourceUrl: string;
     grantProbeIntervalMs: number;
-    /** How many hosts are probed for grant support at once. */
+    /** How many hosts are probed for grant support, or read for contracts, at once. */
     probeConcurrency?: number;
     /** Builds the client for a node's base URL. Tests swap the transport. */
     clientFor?: (baseUrl: string) => NodeClient;
@@ -32,6 +32,7 @@ function manifestColumns(manifest: NodePaymentManifest | undefined) {
         costMicroUsd: manifest && 'costMicroUsd' in manifest ? manifest.costMicroUsd : null,
         inputCostMicroUsdPerMillionTokens: manifest && 'inputCostMicroUsdPerMillionTokens' in manifest ? manifest.inputCostMicroUsdPerMillionTokens : null,
         outputCostMicroUsdPerMillionTokens: manifest && 'outputCostMicroUsdPerMillionTokens' in manifest ? manifest.outputCostMicroUsdPerMillionTokens : null,
+        priceMicroUsdPerMillionTokens: manifest && 'priceMicroUsdPerMillionTokens' in manifest ? manifest.priceMicroUsdPerMillionTokens : null,
         recipientOrganizationId: manifest?.recipientOrganizationId ?? null,
     };
 }
@@ -43,9 +44,19 @@ const fqnOf = (resource: { path: string; name: string }) => `${resource.path}.${
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
+/** Runs `task` on every item, `concurrency` at a time. */
+async function forEachConcurrently<T>(items: T[], concurrency: number, task: (item: T) => Promise<void>): Promise<void> {
+    const queue = [...items];
+    const worker = async () => {
+        for (let item = queue.shift(); item !== undefined; item = queue.shift()) await task(item);
+    };
+    await Promise.all(Array.from({ length: concurrency }, worker));
+}
+
 /**
  * Copies the source node's resource list into Postgres. A resource the node stops listing is
- * marked removed rather than deleted. Restricted functions' hosts are probed for grant support.
+ * marked removed rather than deleted. Restricted functions' hosts are probed for grant support,
+ * and contracts' hosts are read for each contract's versions and source.
  */
 export class SyncService {
     private readonly clientFor: (baseUrl: string) => NodeClient;
@@ -82,7 +93,7 @@ export class SyncService {
             }
 
             const counts = await this.db.transaction((tx) => this.store(tx, self, peers, resources));
-            await this.probeGrants();
+            await Promise.all([this.probeGrants(), this.syncContracts()]);
 
             const [finished] = await this.db.update(syncRunsTable)
                 .set({ status: 'succeeded', finishedAt: new Date(), ...counts })
@@ -233,25 +244,80 @@ export class SyncService {
             ))
             .orderBy(nodesTable.id, desc(resourcesTable.lastSeenAt));
 
-        const queue = [...targets];
-        const worker = async () => {
-            for (let target = queue.shift(); target; target = queue.shift()) {
-                try {
-                    const result = await this.clientFor(target.baseUrl).probeGrant(target.resourcePath, target.resourceName, target.functionName);
-                    if (result.kind !== 'restricted') {
-                        this.logger?.warn({ host: target.baseUrl, status: result.status }, 'Unexpected grant probe response');
-                        continue;
-                    }
-                    await this.db.update(nodesTable).set({
-                        acceptsGrantRequests: result.grantEndpoint !== null,
-                        grantEndpoint: result.grantEndpoint,
-                        grantProbedAt: new Date(),
-                    }).where(eq(nodesTable.id, target.nodeId));
-                } catch (error) {
-                    this.logger?.warn({ host: target.baseUrl, err: error instanceof Error ? error.message : String(error) }, 'Grant probe failed');
+        await forEachConcurrently(targets, this.options.probeConcurrency ?? 4, async (target) => {
+            try {
+                const result = await this.clientFor(target.baseUrl).probeGrant(target.resourcePath, target.resourceName, target.functionName);
+                if (result.kind !== 'restricted') {
+                    this.logger?.warn({ host: target.baseUrl, status: result.status }, 'Unexpected grant probe response');
+                    return;
                 }
+                await this.db.update(nodesTable).set({
+                    acceptsGrantRequests: result.grantEndpoint !== null,
+                    grantEndpoint: result.grantEndpoint,
+                    grantProbedAt: new Date(),
+                }).where(eq(nodesTable.id, target.nodeId));
+            } catch (error) {
+                this.logger?.warn({ host: target.baseUrl, err: error instanceof Error ? error.message : String(error) }, 'Grant probe failed');
             }
-        };
-        await Promise.all(Array.from({ length: this.options.probeConcurrency ?? 4 }, worker));
+        });
+    }
+
+    /**
+     * Reads every version of each live contract, with its source, from the node that hosts it: the source
+     * node only lists a contract's latest signature, and peers' contracts only on their own nodes. Only a
+     * contract's own host is believed about it. A host that can't be read keeps the versions stored before.
+     */
+    private async syncContracts(): Promise<void> {
+        const rows = await this.db.selectDistinct({ id: resourcesTable.id, fqn: resourcesTable.fqn, baseUrl: resourcesTable.baseUrl })
+            .from(resourcesTable)
+            .innerJoin(resourceFunctionsTable, eq(resourceFunctionsTable.resourceId, resourcesTable.id))
+            .where(and(eq(resourceFunctionsTable.kind, 'contract'), isNull(resourcesTable.removedAt)));
+
+        const byHost = new Map<string, Map<string, number>>();
+        for (const row of rows) {
+            const contracts = byHost.get(row.baseUrl) ?? new Map<string, number>();
+            contracts.set(row.fqn, row.id);
+            byHost.set(row.baseUrl, contracts);
+        }
+
+        await forEachConcurrently([...byHost], this.options.probeConcurrency ?? 4, async ([host, resourceIds]) => {
+            let listed: NodeContract[];
+            try {
+                const { contracts, invalid } = await this.clientFor(host).getAllContracts();
+                if (invalid > 0) this.logger?.warn({ host, invalid }, 'Skipped malformed contracts');
+                listed = contracts;
+            } catch (error) {
+                this.logger?.warn({ host, err: error instanceof Error ? error.message : String(error) }, 'Reading contracts failed');
+                return;
+            }
+
+            // Each version once. A misbehaving node could repeat one; the first entry wins.
+            const versions = new Map<number, Map<string, NodeContract>>([...resourceIds.values()].map((id) => [id, new Map()]));
+            for (const contract of listed) {
+                const resourceId = resourceIds.get(fqnOf(contract));
+                const forResource = resourceId === undefined ? undefined : versions.get(resourceId);
+                if (forResource && !forResource.has(contract.version)) forResource.set(contract.version, contract);
+            }
+
+            const now = new Date();
+            await this.db.transaction(async (tx) => {
+                for (const [resourceId, contracts] of versions) {
+                    await tx.delete(contractVersionsTable).where(eq(contractVersionsTable.resourceId, resourceId));
+                    if (contracts.size > 0) {
+                        await tx.insert(contractVersionsTable).values([...contracts.values()].map((contract) => ({
+                            resourceId,
+                            version: contract.version,
+                            source: contract.source,
+                            parameters: contract.parameters,
+                            returnType: contract.returnType,
+                            ownerOrganizationId: contract.ownerOrganizationId,
+                            description: contract.description ?? null,
+                            deployedAt: contract.createdAt,
+                        })));
+                    }
+                    await tx.update(resourcesTable).set({ contractSyncedAt: now }).where(eq(resourcesTable.id, resourceId));
+                }
+            });
+        });
     }
 }

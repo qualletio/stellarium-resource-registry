@@ -70,6 +70,11 @@
   font-weight: 600;
 }
 
+.contract {
+  color: var(--violet);
+  font-size: 13px;
+}
+
 .description {
   display: block;
   color: var(--muted);
