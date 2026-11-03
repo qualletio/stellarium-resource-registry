@@ -1,6 +1,6 @@
 // Real stellarium-ts nodes for the local node apps and the API's tests, plus sample resources
 // that cover every combination the registry shows: free and paid, open and restricted, fixed, inference
-// and contract.
+// and contract, and event types with the event contracts consuming them.
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import Fastify from 'fastify';
@@ -162,6 +162,58 @@ export const PEER_CONTRACTS: ContractSpec[] = [
     },
 ];
 
+/** An event type to declare: RequestScript source such as `event path.Name@version(field: type)`. */
+export interface EventSpec {
+    source: string;
+    description?: string;
+}
+
+/** Event types for the node the registry syncs from. TemperatureRead has two versions; Alert is restricted. */
+export const SOURCE_EVENTS: EventSpec[] = [
+    { description: 'A temperature reading for a city.', source: 'event com.example.TemperatureRead(city: string, degrees: int32)' },
+    { description: 'A temperature reading for a city, with the station that took it.', source: 'event com.example.TemperatureRead@2(city: string, degrees: int32, station: string)' },
+    { description: 'Severe weather. Only the owner\'s contracts receive it.', source: 'restricted event com.example.Alert(city: string, level: string)' },
+];
+
+/** Event contracts for the source node, deployed after its event types. Contracts on any node may consume them. */
+export const SOURCE_EVENT_CONTRACTS: ContractSpec[] = [
+    {
+        description: 'Keeps the highest temperature read in each city.',
+        source: `contract com.example.RecordHighs consumes com.example.TemperatureRead@2 {
+    var state(city) high: int32 = -273
+
+    if (degrees > high) {
+        high = degrees
+    }
+}`,
+    },
+    {
+        description: 'Counts severe weather alerts per city.',
+        source: `contract com.example.AlertLog consumes com.example.Alert {
+    var state(city) alerts: int32 = 0
+    alerts = alerts + 1
+}`,
+    },
+];
+
+/** Event types for the peer node. */
+export const PEER_EVENTS: EventSpec[] = [
+    { description: 'A book came back to the library.', source: 'event org.archive.BookReturned(bookId: string, late: boolean)' },
+];
+
+/** Event contracts for the peer node. */
+export const PEER_EVENT_CONTRACTS: ContractSpec[] = [
+    {
+        description: 'Counts late returns per book.',
+        source: `contract org.archive.LateReturns consumes org.archive.BookReturned {
+    var state(bookId) lateCount: int32 = 0
+    if (late) {
+        lateCount = lateCount + 1
+    }
+}`,
+    },
+];
+
 export interface RunningNode {
     baseUrl: string;
     publicKey: string;
@@ -171,12 +223,18 @@ export interface RunningNode {
     deployContract: (contract: ContractSpec) => Promise<void>;
     /** Deletes `path.Name@version`, or every version of `path.Name`. */
     deleteContract: (ref: string) => Promise<void>;
+    /** Declares an event type with the node's API key. Throws if the node refuses it. */
+    declareEvent: (event: EventSpec) => Promise<void>;
+    /** Deletes event type `path.Name@version`, or every version of `path.Name`. */
+    deleteEvent: (ref: string) => Promise<void>;
     close: () => Promise<void>;
 }
 
 export interface StartNodeOptions {
     resources: ResourceSpec[];
-    /** Deployed in order once the node listens, before `startNode` resolves. */
+    /** Declared in order once the node listens, before its contracts are deployed. */
+    events?: EventSpec[];
+    /** Deployed in order once the node listens, before `startNode` resolves. Event contracts among them need their event types in `events`. */
     contracts?: ContractSpec[];
     /** Issue a grant to anyone who asks. Without it, the node refuses grant requests. */
     approveGrants?: boolean;
@@ -272,24 +330,27 @@ export async function startNode(options: StartNodeOptions): Promise<RunningNode>
     });
 
     // The node's own address, since `baseUrl` may be a name only other containers resolve.
-    const local = `http://${host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host}:${port}/v1/contracts`;
+    const local = `http://${host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host}:${port}/v1`;
     const admin = async (method: string, path: string, body?: unknown) => {
         const response = await fetch(`${local}${path}`, {
             method,
             headers: { authorization: `Bearer ${apiKey}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
             body: body === undefined ? undefined : JSON.stringify(body),
         });
-        if (!response.ok) throw new Error(`${method} /v1/contracts${path} returned ${response.status}: ${await response.text()}`);
+        if (!response.ok) throw new Error(`${method} /v1${path} returned ${response.status}: ${await response.text()}`);
     };
-    const deployContract = (contract: ContractSpec) => admin('POST', '', contract);
-    const deleteContract = (ref: string) => admin('DELETE', `/${encodeURIComponent(ref)}`);
+    const deployContract = (contract: ContractSpec) => admin('POST', '/contracts', contract);
+    const deleteContract = (ref: string) => admin('DELETE', `/contracts/${encodeURIComponent(ref)}`);
+    const declareEvent = (event: EventSpec) => admin('POST', '/events', event);
+    const deleteEvent = (ref: string) => admin('DELETE', `/events/${encodeURIComponent(ref)}`);
 
     try {
+        for (const event of options.events ?? []) await declareEvent(event);
         for (const contract of options.contracts ?? []) await deployContract(contract);
     } catch (error) {
         await fastify.close();
         throw error;
     }
 
-    return { baseUrl, publicKey: publicKey.toString('base64url'), executed, deployContract, deleteContract, close: () => fastify.close() };
+    return { baseUrl, publicKey: publicKey.toString('base64url'), executed, deployContract, deleteContract, declareEvent, deleteEvent, close: () => fastify.close() };
 }

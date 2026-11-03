@@ -1,5 +1,5 @@
 import 'server-only';
-import type { ContractVersion, Page, ResourceDetail, ResourceSummary, SearchQuery, Stats } from '@registry/types';
+import type { ContractVersion, EventContractDetail, EventSearchQuery, EventTypeDetail, EventTypeSummary, Page, ResourceDetail, ResourceSummary, SearchQuery, Stats } from '@registry/types';
 
 const API_URL = (process.env.API_URL ?? 'http://127.0.0.1:4000').replace(/\/+$/, '');
 
@@ -54,3 +54,24 @@ export const getResource = (fqn: string) => getOptional<ResourceDetail>(`/resour
 /** One version of a contract with its source. Undefined when the registry has no such version. */
 export const getContractVersion = (fqn: string, version: string) =>
   getOptional<ContractVersion>(`/resources/${encodeURIComponent(fqn)}/versions/${encodeURIComponent(version)}`);
+
+export function eventSearchParamsFor(query: EventSearchQuery): URLSearchParams {
+  const params = new URLSearchParams();
+  if (query.q) params.set('q', query.q);
+  if (query.restricted) params.set('restricted', 'true');
+  if (query.offset) params.set('offset', String(query.offset));
+  if (query.limit) params.set('limit', String(query.limit));
+  return params;
+}
+
+export const searchEvents = (query: EventSearchQuery) => get<Page<EventTypeSummary>>(`/events?${eventSearchParamsFor(query)}`);
+
+/** Undefined when the registry has never seen the event type. */
+export const getEventType = (fqn: string) => getOptional<EventTypeDetail>(`/events/${encodeURIComponent(fqn)}`);
+
+/** Undefined when the registry has never seen the event contract. */
+export const getEventContract = (fqn: string) => getOptional<EventContractDetail>(`/event-contracts/${encodeURIComponent(fqn)}`);
+
+/** One version of an event contract with its source. Undefined when the registry has no such version. */
+export const getEventContractVersion = (fqn: string, version: string) =>
+  getOptional<ContractVersion>(`/event-contracts/${encodeURIComponent(fqn)}/versions/${encodeURIComponent(version)}`);

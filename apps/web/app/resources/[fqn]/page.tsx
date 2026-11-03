@@ -9,7 +9,7 @@ import terminal from '@/components/Terminal.module.css';
 import { getContractVersion, getResource } from '@/lib/api';
 import { formatDate, formatUsd, timeAgo } from '@/lib/format';
 import { pageMetadata } from '@/lib/site';
-import styles from './page.module.css';
+import styles from '@/components/Detail.module.css';
 
 type Props = { params: Promise<{ fqn: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 

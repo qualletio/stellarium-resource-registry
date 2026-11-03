@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next';
-import { searchResources } from '@/lib/api';
+import { getEventType, searchEvents, searchResources } from '@/lib/api';
 import { SITE_URL } from '@/lib/site';
 
 // Built per request so builds don't need the API. Fetches are still cached for a few seconds (lib/api.ts).
@@ -13,6 +13,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const entries: MetadataRoute.Sitemap = [
     { url: `${SITE_URL}/`, changeFrequency: 'hourly', priority: 1 },
     { url: `${SITE_URL}/search`, changeFrequency: 'hourly', priority: 0.5 },
+    { url: `${SITE_URL}/events`, changeFrequency: 'hourly', priority: 0.5 },
   ];
 
   // Search lists only live resources, so removed ones drop out of the sitemap.
@@ -26,6 +27,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         changeFrequency: 'daily',
         priority: 0.8,
       });
+    }
+    offset = page.nextOffset;
+  }
+
+  // Live event types, and the live event contracts consuming them.
+  offset = 0;
+  while (offset !== null && entries.length < MAX_URLS) {
+    const page = await searchEvents({ offset, limit: PAGE_SIZE });
+    const details = await Promise.all(page.items.map((event) => getEventType(event.fqn)));
+    for (const event of page.items) {
+      entries.push({ url: `${SITE_URL}/events/${encodeURIComponent(event.fqn)}`, changeFrequency: 'daily', priority: 0.7 });
+    }
+    for (const consumer of details.flatMap((detail) => detail?.consumers ?? [])) {
+      entries.push({ url: `${SITE_URL}/event-contracts/${encodeURIComponent(consumer.fqn)}`, changeFrequency: 'daily', priority: 0.6 });
     }
     offset = page.nextOffset;
   }

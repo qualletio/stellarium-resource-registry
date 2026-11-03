@@ -112,3 +112,17 @@
     margin-bottom: 6px;
   }
 }
+
+.eventBadge {
+  font-size: 12px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  color: var(--cyan);
+}
+
+.restrictedBadge {
+  font-size: 12px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  color: var(--danger);
+}

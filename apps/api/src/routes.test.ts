@@ -30,7 +30,15 @@ describe('routes', () => {
                     paid('classify', 'text: string', 'string', 500),
                 ] },
             ],
+            events: [
+                { source: 'event com.example.OrderPlaced(orderId: string, total: decimal)', description: 'An order was placed' },
+                { source: 'event com.example.OrderPlaced@1.10(orderId: string, total: decimal, currency: string)' },
+                { source: 'event com.example.OrderPlaced@1.9(orderId: string)' },
+                { source: 'restricted event io.example.Audit(entry: string)' },
+            ],
             contracts: [
+                { source: 'contract com.example.OnOrder consumes com.example.OrderPlaced@1.10 {\n  const seen = orderId\n}', description: 'Watches orders' },
+                { source: 'contract com.example.OnOrder@2 consumes com.example.OrderPlaced@1.10 {\n  const seen = currency\n}' },
                 { source: 'contract com.example.Sum(a: int32, b: int32): int32 {\n  return a + b\n}', description: 'Adds two numbers' },
                 { source: 'contract com.example.Sum@1.10(a: int32, b: int32, c: int32): int32 {\n  return a + b + c\n}', description: 'Adds three numbers' },
                 { source: 'contract com.example.Sum@1.9(a: int32): int32 {\n  return a\n}' },
@@ -54,7 +62,7 @@ describe('routes', () => {
 
     it('reports stats', async () => {
         const { body } = await get('/v1/stats');
-        expect(body).toMatchObject({ resources: 6, functions: 9, paidFunctions: 5, restrictedFunctions: 1, inferenceFunctions: 2, contracts: 1, nodes: 1, lastSync: { status: 'succeeded' } });
+        expect(body).toMatchObject({ resources: 6, functions: 9, paidFunctions: 5, restrictedFunctions: 1, inferenceFunctions: 2, contracts: 1, eventTypes: 2, eventContracts: 1, nodes: 1, lastSync: { status: 'succeeded' } });
     });
 
     it('ranks an exact name above prefix and substring matches', async () => {
@@ -169,6 +177,73 @@ describe('routes', () => {
         expect(body.functions).toEqual([{ name: 'balance', returnType: 'int64', description: null, parameters: [], paymentManifest: null, restricted: true, kind: 'fixed' }]);
         expect(body.host).toMatchObject({ acceptsGrantRequests: true, grantEndpoint: `${node.baseUrl}/v1/grants/request` });
         expect((await get('/v1/resources/com.example.Missing')).status).toBe(404);
+    });
+
+    it('searches event types by fqn, field name or event contract', async () => {
+        const fqns = async (url: string) => (await get(url)).body.items.map((event: { fqn: string }) => event.fqn);
+        expect(await fqns('/v1/events')).toEqual(expect.arrayContaining(['com.example.OrderPlaced', 'io.example.Audit']));
+        expect(await fqns('/v1/events?restricted=true')).toEqual(['io.example.Audit']);
+        expect(await fqns('/v1/events?q=_')).toEqual([]);
+
+        const { body } = await get('/v1/events?q=currency');
+        // 1.10 is the latest version, so its fields are the ones searched and shown.
+        expect(body).toEqual({
+            items: [{
+                fqn: 'com.example.OrderPlaced',
+                path: 'com.example',
+                name: 'OrderPlaced',
+                baseUrl: node.baseUrl,
+                ownerOrganizationId: SAMPLE_ORGANIZATION,
+                latestVersion: '1.10',
+                fields: [{ name: 'orderId', type: 'string' }, { name: 'total', type: 'decimal' }, { name: 'currency', type: 'string' }],
+                restricted: false,
+                description: null,
+                consumerCount: 1,
+                matchedConsumers: [],
+                matchedFields: ['currency'],
+                lastSeenAt: expect.any(String),
+                removedAt: null,
+            }],
+            nextOffset: null,
+        });
+        expect((await get('/v1/events?q=OnOrder')).body.items).toMatchObject([{ fqn: 'com.example.OrderPlaced', matchedConsumers: ['com.example.OnOrder'] }]);
+        expect((await get('/v1/events?limit=1000')).status).toBe(400);
+    });
+
+    it('returns an event type with its versions, newest first, and its event contracts', async () => {
+        const { status, body } = await get('/v1/events/com.example.OrderPlaced');
+        expect(status).toBe(200);
+        expect(body.versions.map((v: { version: string }) => v.version)).toEqual(['1.10', '1.9', '1']);
+        expect(body.versions[2]).toEqual({ version: '1', fields: [{ name: 'orderId', type: 'string' }, { name: 'total', type: 'decimal' }], restricted: false, description: 'An order was placed', declaredAt: expect.any(String) });
+        expect(body.consumers).toEqual([{
+            fqn: 'com.example.OnOrder',
+            path: 'com.example',
+            name: 'OnOrder',
+            baseUrl: node.baseUrl,
+            eventVersion: '1.10',
+            ownerOrganizationId: SAMPLE_ORGANIZATION,
+            description: null,
+            latestVersion: '2',
+        }]);
+        expect(body.host).toMatchObject({ baseUrl: node.baseUrl, isSource: true });
+        expect((await get('/v1/events/com.example.Missing')).status).toBe(404);
+    });
+
+    it('returns an event contract and one version with its source', async () => {
+        const { status, body } = await get('/v1/event-contracts/com.example.OnOrder');
+        expect(status).toBe(200);
+        expect(body).toMatchObject({
+            consumes: { fqn: 'com.example.OrderPlaced', version: '1.10', known: true },
+            contract: { latestVersion: '2', source: 'contract com.example.OnOrder@2 consumes com.example.OrderPlaced@1.10 {\n  const seen = currency\n}' },
+        });
+        expect(body.contract.versions.map((v: { version: string; description: string | null }) => [v.version, v.description])).toEqual([['2', null], ['1', 'Watches orders']]);
+
+        const version = await get('/v1/event-contracts/com.example.OnOrder/versions/1');
+        expect(version.body).toMatchObject({ fqn: 'com.example.OnOrder', version: '1', parameters: [], returnType: '', source: expect.stringContaining('const seen = orderId') });
+        expect((await get('/v1/event-contracts/com.example.OnOrder/versions/3')).status).toBe(404);
+        // An event contract isn't a resource, and a resource isn't an event contract.
+        expect((await get('/v1/resources/com.example.OnOrder')).status).toBe(404);
+        expect((await get('/v1/event-contracts/com.example.Sum')).status).toBe(404);
     });
 
     it('lists nodes and sync runs', async () => {
