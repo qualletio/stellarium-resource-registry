@@ -293,6 +293,8 @@ export class RegistryRepository {
                 count(*) filter (where f.restricted) as restricted_functions,
                 count(*) filter (where f.kind = 'inference') as inference_functions,
                 count(*) filter (where f.kind = 'contract') as contracts,
+                (select count(*) from event_types where removed_at is null) as event_types,
+                (select count(*) from event_contracts where removed_at is null) as event_contracts,
                 (select count(*) from nodes) as nodes
             from resource_functions f
             join resources r on r.id = f.resource_id and r.removed_at is null
@@ -309,6 +311,8 @@ export class RegistryRepository {
             restrictedFunctions: Number(counts.restricted_functions),
             inferenceFunctions: Number(counts.inference_functions),
             contracts: Number(counts.contracts),
+            eventTypes: Number(counts.event_types),
+            eventContracts: Number(counts.event_contracts),
             nodes: Number(counts.nodes),
             sourceUrl: this.sourceUrl,
             lastSync: lastSync ? toSyncRun(lastSync) : null,

@@ -1,4 +1,4 @@
-import type { FunctionParameter, ResourceFunction } from '@registry/types';
+import type { EventField, EventTypeVersion, FunctionParameter, ResourceFunction } from '@registry/types';
 
 export const MICRO_USD_PER_USD = 1_000_000;
 
@@ -65,3 +65,10 @@ export function requestScriptExample(path: string, name: string, fn: ResourceFun
 /** The `Capability` a grant for exactly this function would carry (stellarium-ts `grant/grant.ts`). */
 export const capabilityExample = (path: string, name: string, fn: ResourceFunction) =>
   JSON.stringify({ resourcePath: path, resourceName: name, functionName: fn.name }, null, 2);
+
+/** `(orderId: string, total: decimal)`, or nothing for an event type without fields, as RequestScript declares it. */
+export const eventFields = (fields: EventField[]) => (fields.length === 0 ? '' : `(${fields.map((field) => `${field.name}: ${field.type}`).join(', ')})`);
+
+/** `restricted event com.example.Alert@1(city: string)`: the declaration a node was given for the version. */
+export const eventDeclaration = (fqn: string, version: Pick<EventTypeVersion, 'version' | 'fields' | 'restricted'>) =>
+  `${version.restricted ? 'restricted ' : ''}event ${fqn}@${version.version}${eventFields(version.fields)}`;

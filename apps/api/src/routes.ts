@@ -1,12 +1,14 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { SEARCH_FIELDS, type SearchField } from '@registry/types';
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import type { EventRepository } from './registry/eventRepository.js';
 import type { RegistryRepository } from './registry/registryRepository.js';
 import { toSyncRun } from './registry/registryRepository.js';
 import type { SyncService } from './sync/syncService.js';
 
 interface RouteOptions {
     repository: RegistryRepository;
+    events: EventRepository;
     syncService: SyncService;
     adminApiKey: string | undefined;
 }
@@ -51,6 +53,16 @@ const contractVersionParamsSchema = {
     properties: {
         fqn: fqnParamsSchema.properties.fqn,
         version: { type: 'string', minLength: 1, maxLength: 64 },
+    },
+} as const;
+
+const eventSearchQuerySchema = {
+    type: 'object',
+    properties: {
+        q: searchQuerySchema.properties.q,
+        restricted: searchQuerySchema.properties.restricted,
+        offset: searchQuerySchema.properties.offset,
+        limit: searchQuerySchema.properties.limit,
     },
 } as const;
 
@@ -100,6 +112,41 @@ const routes: FastifyPluginAsync<RouteOptions> = async (fastify, options) => {
         const contract = await repository.getContractVersion(fqn, version);
         if (!contract) {
             return reply.status(404).send({ error: 'Contract version not found' });
+        }
+        return contract;
+    });
+
+    /** Event types, searched by fqn, field name, or the fqn of an event contract consuming them. */
+    fastify.get('/events', { schema: { querystring: eventSearchQuerySchema } }, async (request) => {
+        return options.events.search(request.query as { q?: string; restricted: boolean; offset: number; limit: number });
+    });
+
+    /** An event type, its versions, and the event contracts consuming it. */
+    fastify.get('/events/:fqn', { schema: { params: fqnParamsSchema } }, async (request, reply) => {
+        const { fqn } = request.params as { fqn: string };
+        const eventType = await options.events.getEventType(fqn);
+        if (!eventType) {
+            return reply.status(404).send({ error: 'Event type not found' });
+        }
+        return eventType;
+    });
+
+    /** An event contract, the event it consumes, and its versions. */
+    fastify.get('/event-contracts/:fqn', { schema: { params: fqnParamsSchema } }, async (request, reply) => {
+        const { fqn } = request.params as { fqn: string };
+        const contract = await options.events.getEventContract(fqn);
+        if (!contract) {
+            return reply.status(404).send({ error: 'Event contract not found' });
+        }
+        return contract;
+    });
+
+    /** One version of an event contract, with its RequestScript source. */
+    fastify.get('/event-contracts/:fqn/versions/:version', { schema: { params: contractVersionParamsSchema } }, async (request, reply) => {
+        const { fqn, version } = request.params as { fqn: string; version: string };
+        const contract = await options.events.getEventContractVersion(fqn, version);
+        if (!contract) {
+            return reply.status(404).send({ error: 'Event contract version not found' });
         }
         return contract;
     });

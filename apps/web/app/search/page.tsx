@@ -1,15 +1,19 @@
 import { SEARCH_FIELDS, type SearchField, type SearchQuery } from '@registry/types';
 import type { Metadata } from 'next';
+import Link from 'next/link';
+import { EventList } from '@/components/EventList';
 import { Pagination } from '@/components/Pagination';
 import { ResourceList } from '@/components/ResourceList';
 import { SearchPrompt } from '@/components/SearchPrompt';
 import terminal from '@/components/Terminal.module.css';
-import { searchResources } from '@/lib/api';
+import { searchEvents, searchParamsFor, searchResources } from '@/lib/api';
 import { pageMetadata } from '@/lib/site';
 import styles from './page.module.css';
 
 
 const PAGE_SIZE = 25;
+/** Event types shown under a resource search, with a link to the rest. */
+const EVENT_PREVIEW = 3;
 
 type Params = Record<string, string | string[] | undefined>;
 
@@ -51,7 +55,12 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
 
 export default async function SearchPage({ searchParams }: { searchParams: Promise<Params> }) {
   const query = parseQuery(await searchParams);
-  const results = await searchResources({ ...query, limit: PAGE_SIZE });
+  // Events match a query too, unless a filter only resources have is on.
+  const resourceFilters = query.in !== 'all' || query.paid || query.inference || query.contract;
+  const [results, events] = await Promise.all([
+    searchResources({ ...query, limit: PAGE_SIZE }),
+    query.q && !resourceFilters && query.offset === 0 ? searchEvents({ q: query.q, restricted: query.restricted, limit: EVENT_PREVIEW }) : undefined,
+  ]);
   const shown = results.items.length;
 
   return (
@@ -72,8 +81,27 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
             <ResourceList resources={results.items} query={query.q} />
           </>
         )}
-        <Pagination query={query} offset={query.offset} limit={PAGE_SIZE} nextOffset={results.nextOffset} />
+        <Pagination
+          href={(offset) => {
+            const params = searchParamsFor({ ...query, offset }).toString();
+            return params ? `/search?${params}` : '/search';
+          }}
+          offset={query.offset}
+          limit={PAGE_SIZE}
+          nextOffset={results.nextOffset}
+        />
       </section>
+      {events && events.items.length > 0 && (
+        <section className={terminal.section}>
+          <h2 className={terminal.rule}>events</h2>
+          <EventList events={events.items} query={query.q} />
+          {events.nextOffset !== null && (
+            <p className={styles.total}>
+              <Link href={`/events?${new URLSearchParams({ q: query.q, ...(query.restricted && { restricted: 'true' }) })}`}>more events →</Link>
+            </p>
+          )}
+        </section>
+      )}
     </>
   );
 }

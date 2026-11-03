@@ -55,6 +55,38 @@ export interface NodeContract {
     createdAt: Date;
 }
 
+/** A field of an event type: its name and RequestScript type string. */
+export interface NodeEventField {
+    name: string;
+    type: string;
+}
+
+/** One version of an event type, as a node's `GET /v1/events` lists it. */
+export interface NodeEventType {
+    path: string;
+    name: string;
+    version: string;
+    fields: NodeEventField[];
+    restricted: boolean;
+    ownerOrganizationId: string;
+    /** The node that declared it. A node also lists the types it learned from peers. */
+    baseUrl: string;
+    description?: string;
+    createdAt: Date;
+}
+
+/** One of a node's event contracts, as its event announcement lists it. */
+export interface NodeEventSubscription {
+    /** The event contract's path and name. */
+    path: string;
+    name: string;
+    eventPath: string;
+    eventName: string;
+    eventVersion: string;
+    /** Who deployed the event contract. Null when the node doesn't know its organization. */
+    ownerOrganizationId: string | null;
+}
+
 /** The outcome of calling a restricted function without authorization. */
 export type GrantProbeResult =
     | { kind: 'restricted'; grantEndpoint: string | null }
@@ -230,8 +262,9 @@ function parseContractParameters(value: unknown): NodeContract['parameters'] | u
     return parameters;
 }
 
+/** `returnType` is empty for an event contract, which returns nothing. */
 export function parseContract(value: unknown): NodeContract | undefined {
-    if (!isObject(value) || !isNonEmptyString(value.path) || !isNonEmptyString(value.name) || !isNonEmptyString(value.returnType)) return undefined;
+    if (!isObject(value) || !isNonEmptyString(value.path) || !isNonEmptyString(value.name) || typeof value.returnType !== 'string') return undefined;
     if (typeof value.version !== 'string' || !VERSION_PATTERN.test(value.version)) return undefined;
     if (typeof value.source !== 'string' || value.source.length === 0 || Buffer.byteLength(value.source) > MAX_CONTRACT_SOURCE_BYTES) return undefined;
     const parameters = parseContractParameters(value.parameters);
@@ -252,6 +285,67 @@ export function parseContract(value: unknown): NodeContract | undefined {
         ownerOrganizationId: owner,
         description: description.value,
         createdAt,
+    };
+}
+
+/** More fields than any event needs. Nodes cap an event's data at 32 KiB, so it can't carry many. */
+const MAX_EVENT_FIELDS = 256;
+
+function parseOrganizationId(value: unknown): string | undefined {
+    return isNonEmptyString(value) && value.length <= MAX_ORGANIZATION_ID_LENGTH ? value : undefined;
+}
+
+function parseEventFields(value: unknown): NodeEventField[] | undefined {
+    if (!Array.isArray(value) || value.length > MAX_EVENT_FIELDS) return undefined;
+    const fields: NodeEventField[] = [];
+    const names = new Set<string>();
+    for (const field of value) {
+        if (!isObject(field) || !isNonEmptyString(field.name) || !isNonEmptyString(field.type) || names.has(field.name)) return undefined;
+        names.add(field.name);
+        fields.push({ name: field.name, type: field.type });
+    }
+    return fields;
+}
+
+export function parseEventType(value: unknown): NodeEventType | undefined {
+    if (!isObject(value) || !isNonEmptyString(value.path) || !isNonEmptyString(value.name)) return undefined;
+    if (typeof value.version !== 'string' || !VERSION_PATTERN.test(value.version)) return undefined;
+    const fields = parseEventFields(value.fields);
+    const ownerOrganizationId = parseOrganizationId(value.ownerOrganizationId);
+    const baseUrl = parseBaseUrl(value.baseUrl);
+    if (!fields || !ownerOrganizationId || !baseUrl || typeof value.restricted !== 'boolean') return undefined;
+    const description = parseDescription(value.description);
+    if (!description.ok) return undefined;
+    const createdAt = typeof value.createdAt === 'string' ? new Date(value.createdAt) : undefined;
+    if (!createdAt || Number.isNaN(createdAt.getTime())) return undefined;
+    return {
+        path: value.path,
+        name: value.name,
+        version: value.version,
+        fields,
+        restricted: value.restricted,
+        ownerOrganizationId,
+        baseUrl,
+        description: description.value,
+        createdAt,
+    };
+}
+
+/** `consumer` is the event contract as `path.Name`. Contracts always have a path, so it has a dot. */
+export function parseEventSubscription(value: unknown): NodeEventSubscription | undefined {
+    if (!isObject(value) || !isNonEmptyString(value.eventPath) || !isNonEmptyString(value.eventName) || !isNonEmptyString(value.consumer)) return undefined;
+    if (typeof value.eventVersion !== 'string' || !VERSION_PATTERN.test(value.eventVersion)) return undefined;
+    const owner = value.ownerOrganizationId === null || value.ownerOrganizationId === undefined ? null : parseOrganizationId(value.ownerOrganizationId);
+    if (owner === undefined) return undefined;
+    const dot = value.consumer.lastIndexOf('.');
+    if (dot <= 0 || dot === value.consumer.length - 1) return undefined;
+    return {
+        path: value.consumer.slice(0, dot),
+        name: value.consumer.slice(dot + 1),
+        eventPath: value.eventPath,
+        eventName: value.eventName,
+        eventVersion: value.eventVersion,
+        ownerOrganizationId: owner,
     };
 }
 
@@ -332,6 +426,50 @@ export class NodeClient {
             if (contract) contracts.push(contract);
         }
         return { contracts, invalid: raw.length - contracts.length };
+    }
+
+    /**
+     * Every version of every event type the node knows: the ones it declared, then the ones it learned from
+     * peers, each with the `baseUrl` of the node that declared it. Malformed entries are skipped and counted in
+     * `invalid`. Null when the node predates events and has no such route.
+     */
+    async getAllEventTypes(): Promise<{ eventTypes: NodeEventType[]; invalid: number } | null> {
+        let raw: unknown[];
+        try {
+            raw = await this.getAllPages('/events', 'eventTypes');
+        } catch (error) {
+            if (error instanceof NodeRequestError && error.status === 404) return null;
+            throw error;
+        }
+        const eventTypes: NodeEventType[] = [];
+        for (const item of raw) {
+            const eventType = parseEventType(item);
+            if (eventType) eventTypes.push(eventType);
+        }
+        return { eventTypes, invalid: raw.length - eventTypes.length };
+    }
+
+    /**
+     * The node's event contracts and the event each consumes, from the announcement it serves its peers. Its
+     * signature is for peers: the registry asks the node itself. Null when the node predates events.
+     */
+    async getEventSubscriptions(): Promise<{ subscriptions: NodeEventSubscription[]; invalid: number } | null> {
+        let body: unknown;
+        try {
+            body = await this.getJson('/events/announcement');
+        } catch (error) {
+            if (error instanceof NodeRequestError && error.status === 404) return null;
+            throw error;
+        }
+        if (!isObject(body) || !Array.isArray(body.subscriptions)) {
+            throw new NodeRequestError(`${this.baseUrl}/v1/events/announcement returned an invalid announcement`);
+        }
+        const subscriptions: NodeEventSubscription[] = [];
+        for (const item of body.subscriptions) {
+            const subscription = parseEventSubscription(item);
+            if (subscription) subscriptions.push(subscription);
+        }
+        return { subscriptions, invalid: body.subscriptions.length - subscriptions.length };
     }
 
     async getAllPeers(): Promise<NodePeer[]> {

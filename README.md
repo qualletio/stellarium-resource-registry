@@ -1,6 +1,6 @@
 # stellarium-resource-registry
 
-A public registry of the Resources on the [Stellarium](https://docs.stellarium.sh) network. Anyone can search resources by path, name or function name, and see each resource's description and website, each function's signature and description, its kind (fixed, `inference` for AI inference, or `contract`), its price (from its `paymentManifest`: per call, per million input and output tokens for an inference function, or per million script tokens executed for a contract) and its access (`restricted`, and whether the hosting node issues grants on request). For a contract, a RequestScript script deployed to a node, it also shows every deployed version and its source.
+A public registry of the Resources on the [Stellarium](https://docs.stellarium.sh) network. Anyone can search resources by path, name or function name, and see each resource's description and website, each function's signature and description, its kind (fixed, `inference` for AI inference, or `contract`), its price (from its `paymentManifest`: per call, per million input and output tokens for an inference function, or per million script tokens executed for a contract) and its access (`restricted`, and whether the hosting node issues grants on request). For a contract, a RequestScript script deployed to a node, it also shows every deployed version and its source. It also lists **events**: the event types organizations declare on their nodes, with each version's fields, owner and restriction, and the event contracts on any node that consume them, with their source. Events are searchable by name, field name or consuming contract.
 
 ## Layout
 
@@ -9,9 +9,9 @@ A public registry of the Resources on the [Stellarium](https://docs.stellarium.s
 | `apps/api` | Fastify + Postgres/Drizzle. Syncs resources from one Stellarium node on an interval and serves them at `/v1`. Port 4000. |
 | `apps/web` | Next.js (App Router, CSS Modules) with a terminal look and light/dark themes. Reads the API on the server. Port 3000. |
 | `apps/local-source-node` | A real stellarium-ts node the registry syncs from (:3100). Bootstraps from the peer and issues grants on request. |
-| `apps/local-peer-node` | A real stellarium-ts node hosting `org.archive.*` (:3101), including the `org.archive.Visits` contract. Refuses grant requests. |
+| `apps/local-peer-node` | A real stellarium-ts node hosting `org.archive.*` (:3101), including the `org.archive.Visits` contract and the `org.archive.BookReturned` event with its `org.archive.LateReturns` event contract. Refuses grant requests. |
 | `packages/types` | `@registry/types`: the API's wire types, shared by both apps. |
-| `packages/node-fixtures` | `@registry/node-fixtures`: starts stellarium-ts nodes with sample resources (free, paid, restricted, and paid-and-restricted, plus free and per-token inference functions, and contracts it deploys with the node's API key). Used by the local node apps and the API tests. |
+| `packages/node-fixtures` | `@registry/node-fixtures`: starts stellarium-ts nodes with sample resources (free, paid, restricted, and paid-and-restricted, plus free and per-token inference functions, contracts, and event types with event contracts consuming them, all declared with the node's API key). Used by the local node apps and the API tests. |
 
 ## Running locally
 
@@ -48,6 +48,7 @@ Each run reads the source node's public routes, `GET /v1/self`, `/v1/resources` 
 - A resource the node stops listing gets `removed_at` set rather than being deleted. It disappears from search, and its page shows a warning. Nodes the source stops listing are dropped once they host no live resources.
 - **Grant probe.** Who holds a grant is private to the nodes involved, so the registry can only learn whether a host issues grants on request. For each host with a restricted function, it calls one restricted function without authorization (at most once per `GRANT_PROBE_INTERVAL_MS`). The node refuses with 403 before running anything, and includes a `grantEndpoint` if it accepts requests. Open functions are never probed, since calling one would run it.
 - **Contracts.** A contract is listed as a resource with one function, `run`, which only describes its latest version. For each live contract, the registry reads `GET /v1/contracts` (paged) from the node that hosts it, since the source node only lists its own, and stores every version with its source in `contract_versions`. A host is only believed about the contracts it hosts. Each sync mirrors the host's list, so deleted versions disappear; a host that can't be read keeps the versions stored before. The latest version is the highest version number, as the node picks it. Sources over 256 KiB are dropped.
+- **Events.** Nodes leave event contracts out of their resources, so each sync reads every known node (the source, its peers and resource hosts) directly: `GET /v1/events` for event types, keeping only those whose `baseUrl` is the node itself (a node also lists the types it learned from peers), and `GET /v1/events/announcement` for its event contracts and the event version each consumes, whose versions and source come from its `GET /v1/contracts`. They are stored in `event_types`/`event_type_versions` and `event_contracts`/`event_contract_versions`. A node that stops listing one marks it removed; a node that can't be read keeps what was stored; a node without the routes (404, older than stellarium-ts 0.21.0) has none. When two nodes list the same fqn, the registry keeps it with the live node it already has it from, otherwise with the earliest declaration.
 - Every run is logged in `sync_runs` (the last 1,000 are kept) and listed by `GET /v1/sync/runs`.
 
 ## API
@@ -59,6 +60,10 @@ Each run reads the source node's public routes, `GET /v1/self`, `/v1/resources` 
 | `GET /v1/resources/:fqn` | Functions, kinds, prices, access and the host's grant info. For a contract, `contract` has its versions, newest first, and the latest version's source |
 | `GET /v1/resources/:fqn/versions/:version` | One version of a contract, with its source |
 | `GET /v1/nodes` | Source node, peers and hosts |
+| `GET /v1/events?q=&restricted=&offset=&limit=` | Search event types by fqn, field name of the latest version, or consuming event contract's fqn |
+| `GET /v1/events/:fqn` | An event type's versions, newest first, and the live event contracts consuming it |
+| `GET /v1/event-contracts/:fqn` | An event contract: the event it consumes, its owner, and its versions with the latest source |
+| `GET /v1/event-contracts/:fqn/versions/:version` | One version of an event contract, with its source |
 | `GET /v1/sync/runs?limit=` | Recent sync runs |
 | `POST /v1/sync` | Sync now. Requires `Authorization: Bearer $ADMIN_API_KEY` |
 

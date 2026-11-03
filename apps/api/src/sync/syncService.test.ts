@@ -7,6 +7,8 @@ import {
     freePort,
     open,
     PEER_CONTRACTS,
+    PEER_EVENT_CONTRACTS,
+    PEER_EVENTS,
     PEER_RESOURCES,
     paid,
     type RunningNode,
@@ -14,11 +16,14 @@ import {
     SAMPLE_CONTRACT_PRICE,
     SAMPLE_ORGANIZATION,
     SOURCE_CONTRACTS,
+    SOURCE_EVENT_CONTRACTS,
+    SOURCE_EVENTS,
     SOURCE_RESOURCES,
     type StartNodeOptions,
     startNode,
 } from '@registry/node-fixtures';
 import { NodeClient } from '../node/nodeClient.js';
+import { EventRepository } from '../registry/eventRepository.js';
 import { RegistryRepository } from '../registry/registryRepository.js';
 import { createTestDatabase } from '../testing.js';
 import { SyncService } from './syncService.js';
@@ -310,6 +315,139 @@ describe('SyncService against a real stellarium-ts node', () => {
         const visits = await repository.getResource('org.archive.Visits');
         expect(visits?.contract).toMatchObject({ latestVersion: '1', source: PEER_CONTRACTS[0].source });
         expect((await db.select({ version: contractVersionsTable.version }).from(contractVersionsTable)).map((row) => row.version).sort()).toEqual(['1', '1', '2']);
+    });
+
+    describe('events', () => {
+        const events = () => new EventRepository(db);
+        const searchEvents = (q?: string) => events().search({ q, restricted: false, offset: 0, limit: 25 });
+
+        it('reads each node\'s event types and event contracts from that node, leaving event contracts out of resources', async () => {
+            const peer = await startNode({ resources: PEER_RESOURCES, events: PEER_EVENTS, contracts: [...PEER_CONTRACTS, ...PEER_EVENT_CONTRACTS] });
+            const source = await startNode({
+                resources: SOURCE_RESOURCES,
+                events: SOURCE_EVENTS,
+                contracts: [...SOURCE_CONTRACTS, ...SOURCE_EVENT_CONTRACTS],
+                approveGrants: true,
+                startingPeer: peer.baseUrl,
+                port,
+            });
+            nodes = [peer, source];
+
+            // Outlook and Visits are resources. The event contracts aren't.
+            expect(await service.sync()).toMatchObject({ status: 'succeeded', resourcesSeen: 9 });
+            expect(await repository.getResource('com.example.RecordHighs')).toBeUndefined();
+
+            expect((await searchEvents()).items.map((event) => event.fqn).sort()).toEqual(['com.example.Alert', 'com.example.TemperatureRead', 'org.archive.BookReturned']);
+            const temperature = await events().getEventType('com.example.TemperatureRead');
+            expect(temperature).toMatchObject({ baseUrl: source.baseUrl, ownerOrganizationId: SAMPLE_ORGANIZATION, latestVersion: '2', removedAt: null, host: { isSource: true } });
+            expect(temperature?.versions).toEqual([
+                { version: '2', fields: [{ name: 'city', type: 'string' }, { name: 'degrees', type: 'int32' }, { name: 'station', type: 'string' }], restricted: false, description: SOURCE_EVENTS[1].description, declaredAt: expect.any(String) },
+                { version: '1', fields: [{ name: 'city', type: 'string' }, { name: 'degrees', type: 'int32' }], restricted: false, description: SOURCE_EVENTS[0].description, declaredAt: expect.any(String) },
+            ]);
+            expect(temperature?.consumers).toEqual([{
+                fqn: 'com.example.RecordHighs',
+                path: 'com.example',
+                name: 'RecordHighs',
+                baseUrl: source.baseUrl,
+                eventVersion: '2',
+                ownerOrganizationId: SAMPLE_ORGANIZATION,
+                description: SOURCE_EVENT_CONTRACTS[0].description,
+                latestVersion: '1',
+            }]);
+            expect((await events().getEventType('com.example.Alert'))?.versions[0].restricted).toBe(true);
+
+            // The peer's event type and event contract come from the peer.
+            expect(await events().getEventType('org.archive.BookReturned')).toMatchObject({ baseUrl: peer.baseUrl, consumers: [{ fqn: 'org.archive.LateReturns' }] });
+            const lateReturns = await events().getEventContract('org.archive.LateReturns');
+            expect(lateReturns).toMatchObject({
+                baseUrl: peer.baseUrl,
+                description: PEER_EVENT_CONTRACTS[0].description,
+                consumes: { fqn: 'org.archive.BookReturned', version: '1', known: true },
+                contract: { latestVersion: '1', source: PEER_EVENT_CONTRACTS[0].source, versions: [{ version: '1', parameters: [], returnType: '' }] },
+            });
+            expect(await repository.getStats()).toMatchObject({ contracts: 2, eventTypes: 3, eventContracts: 3 });
+            expect([...source.executed, ...peer.executed]).toEqual([]);
+        });
+
+        it('searches event types by fqn, field name and event contract', async () => {
+            await startSource({ resources: [weather], events: SOURCE_EVENTS, contracts: SOURCE_EVENT_CONTRACTS });
+            await service.sync();
+
+            expect((await searchEvents('Alert')).items.map((event) => event.fqn)).toEqual(['com.example.Alert']);
+            const byField = (await searchEvents('station')).items;
+            expect(byField).toMatchObject([{ fqn: 'com.example.TemperatureRead', matchedFields: ['station'], matchedConsumers: [], consumerCount: 1 }]);
+            expect((await searchEvents('highs')).items).toMatchObject([{ fqn: 'com.example.TemperatureRead', matchedConsumers: ['com.example.RecordHighs'] }]);
+            expect((await events().search({ restricted: true, offset: 0, limit: 25 })).items.map((event) => event.fqn)).toEqual(['com.example.Alert']);
+            expect((await searchEvents('nothing')).items).toEqual([]);
+        });
+
+        it('follows event types and event contracts the node deletes', async () => {
+            const node = await startSource({ resources: [weather], events: SOURCE_EVENTS, contracts: SOURCE_EVENT_CONTRACTS });
+            await service.sync();
+            await node.deleteContract('com.example.AlertLog');
+            await node.deleteEvent('com.example.Alert');
+            await node.deleteEvent('com.example.TemperatureRead@1');
+            await service.sync();
+
+            expect((await events().getEventType('com.example.TemperatureRead'))?.versions.map((v) => v.version)).toEqual(['2']);
+            expect((await events().getEventType('com.example.Alert'))?.removedAt).not.toBeNull();
+            expect((await searchEvents()).items.map((event) => event.fqn)).toEqual(['com.example.TemperatureRead']);
+            const removed = await events().getEventContract('com.example.AlertLog');
+            expect(removed?.removedAt).not.toBeNull();
+            // Kept, so the page still shows what it ran.
+            expect(removed?.contract.latestVersion).toBe('1');
+            expect(removed?.consumes.known).toBe(false);
+        });
+
+        it('keeps a node\'s events when it can\'t be read, and reads none from a node that predates them', async () => {
+            let status: number | undefined;
+            await startSource({ resources: [weather], events: SOURCE_EVENTS, contracts: SOURCE_EVENT_CONTRACTS });
+            service = new SyncService(db, {
+                sourceUrl,
+                grantProbeIntervalMs: 60_000,
+                clientFor: (baseUrl) => new NodeClient(baseUrl, 10_000, async (input, init) =>
+                    status && String(input).includes('/v1/events') ? new Response('{}', { status }) : fetch(input, init)),
+            });
+            await service.sync();
+
+            status = 503;
+            expect(await service.sync()).toMatchObject({ status: 'succeeded' });
+            expect((await searchEvents()).items).toHaveLength(2);
+
+            // An older node answers 404, so it has no events.
+            status = 404;
+            expect(await service.sync()).toMatchObject({ status: 'succeeded' });
+            expect((await searchEvents()).items).toEqual([]);
+            expect((await events().getEventContract('com.example.RecordHighs'))?.removedAt).not.toBeNull();
+        });
+
+        it('only believes the node that declared an event type, and keeps an fqn with the node that had it first', async () => {
+            const peer = await startNode({ resources: PEER_RESOURCES, events: PEER_EVENTS });
+            nodes = [peer, await startNode({ resources: [weather], events: SOURCE_EVENTS, startingPeer: peer.baseUrl, port })];
+            const claim = (fqn: string) => {
+                const [name, ...path] = fqn.split('.').reverse();
+                return { path: path.reverse().join('.'), name, version: '9', fields: [], restricted: false, ownerOrganizationId: 'org_forger', description: null, createdAt: new Date().toISOString() };
+            };
+            // The source lists the peer's type as its own declaration, and as the peer's at a new version.
+            service = new SyncService(db, {
+                sourceUrl,
+                grantProbeIntervalMs: 60_000,
+                clientFor: (baseUrl) => new NodeClient(baseUrl, 10_000, async (input, init) => {
+                    const response = await fetch(input, init);
+                    if (baseUrl !== sourceUrl || !new URL(String(input)).pathname.endsWith('/v1/events')) return response;
+                    const { eventTypes } = await response.json() as { eventTypes: unknown[] };
+                    return Response.json({
+                        eventTypes: [...eventTypes, { ...claim('org.archive.BookReturned'), baseUrl: peer.baseUrl }, { ...claim('org.archive.BookReturned'), version: '10', baseUrl: sourceUrl }],
+                        nextOffset: null,
+                    });
+                }),
+            });
+            await service.sync();
+            await service.sync();
+            const returned = await events().getEventType('org.archive.BookReturned');
+            expect(returned).toMatchObject({ baseUrl: peer.baseUrl, ownerOrganizationId: SAMPLE_ORGANIZATION, latestVersion: '1' });
+            expect(returned?.versions).toHaveLength(1);
+        });
     });
 
     it('joins a sync already in progress', async () => {

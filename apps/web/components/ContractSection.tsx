@@ -1,5 +1,6 @@
 import type { ContractInfo, ContractVersion } from '@registry/types';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import { formatDate, timeAgo } from '@/lib/format';
 import { CopyButton } from './CopyButton';
 import styles from './ContractSection.module.css';
@@ -13,19 +14,28 @@ interface Props {
   shown: Pick<ContractVersion, 'version' | 'source'> | null;
   /** A `?version=` that matched none, to say so. */
   missingVersion?: string;
+  /** Where the contract's page lives: `/resources` for a callable contract, `/event-contracts` for an event contract. */
+  basePath?: string;
+  /** Replaces the paragraph introducing the contract. */
+  intro?: ReactNode;
+  /** What the shown version's runs are, for the note on an older one. */
+  runsLabel?: string;
 }
 
-const versionHref = (fqn: string, version: string, latest: string | null) =>
-  `/resources/${encodeURIComponent(fqn)}${version === latest ? '' : `?version=${encodeURIComponent(version)}`}#source`;
-
 /** A contract's deployed versions, newest first, and one version's RequestScript source. */
-export function ContractSection({ fqn, contract, shown, missingVersion }: Props) {
+export function ContractSection({ fqn, contract, shown, missingVersion, basePath = '/resources', intro, runsLabel = 'calls' }: Props) {
+  const versionHref = (version: string) =>
+    `${basePath}/${encodeURIComponent(fqn)}${version === contract.latestVersion ? '' : `?version=${encodeURIComponent(version)}`}#source`;
   return (
     <section className={terminal.section}>
       <h2 className={terminal.rule}>contract</h2>
       <p className={styles.intro}>
-        A RequestScript script deployed to its host. Calls run the latest version, and every version&apos;s source is public, so you
-        can read what a call does before you make it.
+        {intro ?? (
+          <>
+            A RequestScript script deployed to its host. Calls run the latest version, and every version&apos;s source is public, so you
+            can read what a call does before you make it.
+          </>
+        )}
       </p>
 
       <dl className={styles.meta}>
@@ -65,11 +75,12 @@ export function ContractSection({ fqn, contract, shown, missingVersion }: Props)
               const current = version.version === shown?.version;
               return (
                 <li key={version.version} className={current ? styles.current : undefined}>
-                  <Link href={versionHref(fqn, version.version, contract.latestVersion)} className={styles.versionLink} aria-current={current ? 'true' : undefined} scroll={false}>
+                  <Link href={versionHref(version.version)} className={styles.versionLink} aria-current={current ? 'true' : undefined} scroll={false}>
                     @{version.version}
                   </Link>
+                  {/* An event contract has no parameters or return type: the event's fields are its parameters. */}
                   <span className={styles.signature}>
-                    ({version.parameters.map((parameter) => `${parameter.name}: ${parameter.type}`).join(', ')}): {version.returnType}
+                    {version.returnType !== '' && `(${version.parameters.map((parameter) => `${parameter.name}: ${parameter.type}`).join(', ')}): ${version.returnType}`}
                   </span>
                   <span className={styles.deployed} title={version.deployedAt}>
                     {formatDate(version.deployedAt)}
@@ -90,7 +101,7 @@ export function ContractSection({ fqn, contract, shown, missingVersion }: Props)
           <div className={styles.blockHead}>
             <span>
               {fqn}@{shown.version}
-              {shown.version !== contract.latestVersion && <span className={styles.old}> · not the version calls run</span>}
+              {shown.version !== contract.latestVersion && <span className={styles.old}> · not the version {runsLabel} run</span>}
             </span>
             <CopyButton value={shown.source} label="copy source" />
           </div>

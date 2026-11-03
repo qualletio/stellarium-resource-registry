@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_CONTRACT_SOURCE_BYTES, parseContract, parseResource } from './nodeClient.js';
+import { MAX_CONTRACT_SOURCE_BYTES, parseContract, parseEventSubscription, parseEventType, parseResource } from './nodeClient.js';
 
 const valid = {
     path: 'com.example',
@@ -118,6 +118,10 @@ describe('parseContract', () => {
         expect(parseContract({ ...contract, ownerOrganizationId: null, description: null })).toMatchObject({ ownerOrganizationId: null, description: undefined });
     });
 
+    it('accepts an event contract, which takes no parameters and returns nothing', () => {
+        expect(parseContract({ ...contract, parameters: [], returnType: '' })).toMatchObject({ parameters: [], returnType: '' });
+    });
+
     it.each([
         ['a missing path', { ...contract, path: '' }],
         ['a non-numeric version', { ...contract, version: 'latest' }],
@@ -125,12 +129,71 @@ describe('parseContract', () => {
         ['an empty source', { ...contract, source: '' }],
         ['a source over the size limit', { ...contract, source: 'x'.repeat(MAX_CONTRACT_SOURCE_BYTES + 1) }],
         ['a malformed parameter', { ...contract, parameters: [{ name: 'city' }] }],
-        ['a missing return type', { ...contract, returnType: '' }],
+        ['a non-string return type', { ...contract, returnType: 7 }],
         ['a non-string owner', { ...contract, ownerOrganizationId: 7 }],
         ['an owner too long to store', { ...contract, ownerOrganizationId: 'o'.repeat(65) }],
         ['a non-string description', { ...contract, description: 42 }],
         ['an invalid deploy time', { ...contract, createdAt: 'yesterday' }],
     ])('rejects %s', (_, value) => {
         expect(parseContract(value)).toBeUndefined();
+    });
+});
+
+const eventType = {
+    path: 'com.example',
+    name: 'OrderPlaced',
+    version: '1',
+    fields: [{ name: 'orderId', type: 'string' }, { name: 'total', type: 'decimal' }],
+    restricted: false,
+    ownerOrganizationId: 'org_1',
+    baseUrl: 'http://node.example/',
+    description: 'An order was placed.',
+    createdAt: '2026-11-02T12:00:00.000Z',
+};
+
+describe('parseEventType', () => {
+    it('accepts a well-formed event type and normalizes its base URL', () => {
+        expect(parseEventType(eventType)).toEqual({ ...eventType, baseUrl: 'http://node.example', createdAt: new Date(eventType.createdAt) });
+        expect(parseEventType({ ...eventType, fields: [], restricted: true, description: null })).toMatchObject({ fields: [], restricted: true, description: undefined });
+    });
+
+    it.each([
+        ['a missing name', { ...eventType, name: '' }],
+        ['a non-numeric version', { ...eventType, version: 'v1' }],
+        ['a malformed field', { ...eventType, fields: [{ name: 'orderId' }] }],
+        ['a repeated field', { ...eventType, fields: [{ name: 'a', type: 'string' }, { name: 'a', type: 'int32' }] }],
+        ['a non-boolean restriction', { ...eventType, restricted: 'yes' }],
+        ['a missing owner', { ...eventType, ownerOrganizationId: null }],
+        ['an owner too long to store', { ...eventType, ownerOrganizationId: 'o'.repeat(65) }],
+        ['a non-http base URL', { ...eventType, baseUrl: 'ftp://node.example' }],
+        ['an invalid declare time', { ...eventType, createdAt: 'today' }],
+    ])('rejects %s', (_, value) => {
+        expect(parseEventType(value)).toBeUndefined();
+    });
+});
+
+const subscription = { eventPath: 'com.example', eventName: 'OrderPlaced', eventVersion: '1', consumer: 'com.shop.OnOrder', ownerOrganizationId: 'org_2' };
+
+describe('parseEventSubscription', () => {
+    it('splits the event contract into its path and name', () => {
+        expect(parseEventSubscription(subscription)).toEqual({
+            path: 'com.shop',
+            name: 'OnOrder',
+            eventPath: 'com.example',
+            eventName: 'OrderPlaced',
+            eventVersion: '1',
+            ownerOrganizationId: 'org_2',
+        });
+        expect(parseEventSubscription({ ...subscription, ownerOrganizationId: null })).toMatchObject({ ownerOrganizationId: null });
+    });
+
+    it.each([
+        ['a consumer without a path', { ...subscription, consumer: 'OnOrder' }],
+        ['a consumer without a name', { ...subscription, consumer: 'com.shop.' }],
+        ['a missing event name', { ...subscription, eventName: '' }],
+        ['a non-numeric event version', { ...subscription, eventVersion: 'latest' }],
+        ['a non-string owner', { ...subscription, ownerOrganizationId: 3 }],
+    ])('rejects %s', (_, value) => {
+        expect(parseEventSubscription(value)).toBeUndefined();
     });
 });

@@ -184,6 +184,117 @@ export interface ResourceDetail {
     removedAt: string | null;
 }
 
+/** A field of an event type: its name and RequestScript type string. Events carry a value for each. */
+export interface EventField {
+    name: string;
+    type: string;
+}
+
+/** One declared version of an event type. Versions are immutable on the node. */
+export interface EventTypeVersion {
+    version: string;
+    fields: EventField[];
+    /** Delivered only to event contracts its owner deployed. */
+    restricted: boolean;
+    description: string | null;
+    /** When the declaring node says the version was declared. */
+    declaredAt: string;
+}
+
+export interface EventSearchQuery {
+    /** Matches the event type's fqn, its latest version's field names, and its event contracts' fqns. */
+    q?: string;
+    /** Only event types whose latest version is restricted. */
+    restricted?: boolean;
+    offset?: number;
+    limit?: number;
+}
+
+export interface EventTypeSummary {
+    /** `path.Name` */
+    fqn: string;
+    path: string;
+    name: string;
+    /** The node that declared it. */
+    baseUrl: string;
+    /** The organization that owns it, the only one whose nodes and scripts may emit it. */
+    ownerOrganizationId: string;
+    latestVersion: string;
+    /** The latest version's fields, restriction and description. */
+    fields: EventField[];
+    restricted: boolean;
+    description: string | null;
+    /** Live event contracts consuming any version of it. */
+    consumerCount: number;
+    /** Fqns of the event contracts that matched the search. */
+    matchedConsumers: string[];
+    /** Names of the latest version's fields that matched the search. */
+    matchedFields: string[];
+    lastSeenAt: string;
+    removedAt: string | null;
+}
+
+/** An event contract, as an event type lists those consuming it. */
+export interface EventConsumer {
+    fqn: string;
+    path: string;
+    name: string;
+    baseUrl: string;
+    /** The version of the event type it consumes. */
+    eventVersion: string;
+    /** Who deployed it, which pays for its runs. Null when its node doesn't know. */
+    ownerOrganizationId: string | null;
+    /** Its latest version's description. */
+    description: string | null;
+    /** Null until the registry has read its versions from its node. */
+    latestVersion: string | null;
+}
+
+export interface EventTypeDetail {
+    fqn: string;
+    path: string;
+    name: string;
+    baseUrl: string;
+    ownerOrganizationId: string;
+    latestVersion: string;
+    /** Newest first. */
+    versions: EventTypeVersion[];
+    /** Live event contracts consuming any version of it, on any node. */
+    consumers: EventConsumer[];
+    /** The node that declared it, when the registry knows it. */
+    host: NodeInfo | null;
+    firstSeenAt: string;
+    lastSeenAt: string;
+    /** Set when its node stopped listing it. */
+    removedAt: string | null;
+}
+
+/**
+ * A contract that runs with each event of the type it consumes. It takes the event's fields as its parameters,
+ * returns nothing, and isn't a resource: nobody can call it.
+ */
+export interface EventContractDetail {
+    fqn: string;
+    path: string;
+    name: string;
+    baseUrl: string;
+    /** Its latest version's description. */
+    description: string | null;
+    consumes: {
+        /** The event type, as `path.Name`. */
+        fqn: string;
+        version: string;
+        /** Whether the registry lists the event type, so it can be linked. */
+        known: boolean;
+    };
+    /** Its versions and source. Versions have no parameters and an empty return type. */
+    contract: ContractInfo;
+    host: NodeInfo | null;
+    firstSeenAt: string;
+    lastSeenAt: string;
+    removedAt: string | null;
+}
+
 export interface SyncRun {
     id: number;
     sourceUrl: string;
@@ -203,6 +314,10 @@ export interface Stats {
     restrictedFunctions: number;
     inferenceFunctions: number;
     contracts: number;
+    /** Live event types. */
+    eventTypes: number;
+    /** Live event contracts. */
+    eventContracts: number;
     nodes: number;
     sourceUrl: string;
     lastSync: SyncRun | null;

@@ -40,8 +40,8 @@ export default async function HomePage() {
           <Banner lines={['stellarium', 'registry']} label="Stellarium Registry" />
         </h1>
         <p className={styles.tagline}>
-          A public index of the resources and contracts on the Stellarium network. Find a resource by path, name or function, see
-          what each call costs and who may make it, and read every contract&apos;s source.
+          A public index of the resources, contracts and events on the Stellarium network. Find a resource by path, name or function,
+          see what each call costs and who may make it, read every contract&apos;s source, and see which contracts consume each event.
           <span className={terminal.cursor} aria-hidden="true" />
         </p>
         <SearchPrompt initial={{ q: '', in: 'all', paid: false, restricted: false, inference: false, contract: false }} autoFocus />
@@ -88,6 +88,17 @@ export default async function HomePage() {
             A RequestScript script deployed to a node, served as a resource with one function, <code>run</code>. It costs a rate per
             million script tokens it executes, and its own paid calls are paid by its caller. Versions are immutable and their
             source is public, so the registry shows every version.
+          </dd>
+          <dt>event</dt>
+          <dd>
+            An event type an organization declares on its nodes, with the fields its events carry (<code>event com.example.OrderPlaced(orderId:
+            string)</code>). Only that organization&apos;s scripts may <code>emit</code> it. <Link href="/events">Browse events</Link>.
+          </dd>
+          <dt>event contract</dt>
+          <dd>
+            A contract that <code>consumes</code> an event type and runs with each of its events, on any node. It isn&apos;t a resource, so
+            nobody can call it, and whoever deployed it pays for its runs. A restricted event type is consumed only by its owner&apos;s
+            contracts.
           </dd>
           <dt>restricted</dt>
           <dd>

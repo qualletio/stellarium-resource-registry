@@ -1,7 +1,10 @@
 import styles from './SourceCode.module.css';
 
-/** RequestScript's keywords (`KEYWORDS` in requestscript), and `state`, which only follows `var`. */
-const KEYWORDS = new Set(['request', 'contract', 'var', 'const', 'return', 'if', 'else', 'state']);
+/**
+ * RequestScript's keywords (`KEYWORDS` in requestscript), `state`, which only follows `var`, and the event
+ * declarations' `event`, `restricted`, `consumes` and `emit`.
+ */
+const KEYWORDS = new Set(['request', 'contract', 'var', 'const', 'return', 'if', 'else', 'state', 'event', 'restricted', 'consumes', 'emit']);
 const LITERALS = new Set(['true', 'false', 'null']);
 /** Values every contract can read. */
 const BUILTINS = new Set(['caller', 'jwt']);

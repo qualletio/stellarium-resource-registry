@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { and, desc, eq, inArray, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import type { Database } from "../db/database.js";
 import { contractVersionsTable, functionParametersTable, nodesTable, resourceFunctionsTable, resourcesTable, syncRunsTable } from "../db/schema.js";
+import { syncEvents } from "./eventSync.js";
 import { NodeClient, type NodeContract, type NodePaymentManifest, type NodePeer, type NodeResource } from "../node/nodeClient.js";
 
 export type SyncRunRow = typeof syncRunsTable.$inferSelect;
@@ -14,7 +15,7 @@ export interface SyncLogger {
 export interface SyncServiceOptions {
     sourceUrl: string;
     grantProbeIntervalMs: number;
-    /** How many hosts are probed for grant support, or read for contracts, at once. */
+    /** How many hosts are probed for grant support, or read for contracts or events, at once. */
     probeConcurrency?: number;
     /** Builds the client for a node's base URL. Tests swap the transport. */
     clientFor?: (baseUrl: string) => NodeClient;
@@ -56,7 +57,8 @@ async function forEachConcurrently<T>(items: T[], concurrency: number, task: (it
 /**
  * Copies the source node's resource list into Postgres. A resource the node stops listing is
  * marked removed rather than deleted. Restricted functions' hosts are probed for grant support,
- * and contracts' hosts are read for each contract's versions and source.
+ * contracts' hosts are read for each contract's versions and source, and every known node is read
+ * for the event types it declared and its event contracts.
  */
 export class SyncService {
     private readonly clientFor: (baseUrl: string) => NodeClient;
@@ -93,7 +95,15 @@ export class SyncService {
             }
 
             const counts = await this.db.transaction((tx) => this.store(tx, self, peers, resources));
-            await Promise.all([this.probeGrants(), this.syncContracts()]);
+            await Promise.all([
+                this.probeGrants(),
+                this.syncContracts(),
+                syncEvents(this.db, {
+                    clientFor: this.clientFor,
+                    forEach: (items, task) => forEachConcurrently(items, this.options.probeConcurrency ?? 4, task),
+                    logger: this.logger,
+                }),
+            ]);
 
             const [finished] = await this.db.update(syncRunsTable)
                 .set({ status: 'succeeded', finishedAt: new Date(), ...counts })
