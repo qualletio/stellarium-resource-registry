@@ -10,6 +10,7 @@ import {
     PEER_EVENT_CONTRACTS,
     PEER_EVENTS,
     PEER_RESOURCES,
+    PEER_STRUCTS,
     paid,
     type RunningNode,
     restricted,
@@ -19,12 +20,14 @@ import {
     SOURCE_EVENT_CONTRACTS,
     SOURCE_EVENTS,
     SOURCE_RESOURCES,
+    SOURCE_STRUCTS,
     type StartNodeOptions,
     startNode,
 } from '@registry/node-fixtures';
 import { NodeClient } from '../node/nodeClient.js';
 import { EventRepository } from '../registry/eventRepository.js';
 import { RegistryRepository } from '../registry/registryRepository.js';
+import { StructRepository } from '../registry/structRepository.js';
 import { createTestDatabase } from '../testing.js';
 import { SyncService } from './syncService.js';
 
@@ -447,6 +450,98 @@ describe('SyncService against a real stellarium-ts node', () => {
             const returned = await events().getEventType('org.archive.BookReturned');
             expect(returned).toMatchObject({ baseUrl: peer.baseUrl, ownerOrganizationId: SAMPLE_ORGANIZATION, latestVersion: '1' });
             expect(returned?.versions).toHaveLength(1);
+        });
+    });
+
+    describe('structs', () => {
+        const structs = () => new StructRepository(db);
+        const searchStructs = async (q?: string) => (await structs().search({ q, offset: 0, limit: 25 })).items.map((struct) => struct.fqn);
+
+        /** A struct version as a node lists it, for a transport to add to a node's `GET /v1/structs`. */
+        const listed = (fqn: string, version: string, ownerOrganizationId: string, baseUrl: string, fields = [{ name: 'id', type: 'string' }]) => {
+            const [name, ...path] = fqn.split('.').reverse();
+            return { path: path.reverse().join('.'), name, version, fields, ownerOrganizationId, baseUrl, description: null, createdAt: new Date().toISOString() };
+        };
+
+        /** Adds `extra(baseUrl)` to each node's struct listing, and answers `status(baseUrl)` instead when it is set. */
+        const withStructs = (extra: (baseUrl: string) => unknown[], status?: (baseUrl: string) => number | undefined) => new SyncService(db, {
+            sourceUrl,
+            grantProbeIntervalMs: 60_000,
+            clientFor: (baseUrl) => new NodeClient(baseUrl, 10_000, async (input, init) => {
+                if (!new URL(String(input)).pathname.endsWith('/v1/structs')) return fetch(input, init);
+                const answer = status?.(baseUrl);
+                if (answer) return new Response('{}', { status: answer });
+                const { structs: own } = await (await fetch(input, init)).json() as { structs: unknown[] };
+                return Response.json({ structs: [...own, ...extra(baseUrl)], nextOffset: null });
+            }),
+        });
+
+        it('reads each node\'s structs from that node, and finds the functions and structs naming them', async () => {
+            const peer = await startNode({ resources: PEER_RESOURCES, structs: PEER_STRUCTS });
+            nodes = [peer, await startNode({ resources: SOURCE_RESOURCES, structs: SOURCE_STRUCTS, startingPeer: peer.baseUrl, port })];
+            await service.sync();
+
+            expect((await searchStructs()).sort()).toEqual(['com.example.Location', 'com.example.Station', 'org.archive.Book']);
+            const location = await structs().getStruct('com.example.Location');
+            expect(location).toMatchObject({ ownerOrganizationId: SAMPLE_ORGANIZATION, latestVersion: '2', removedAt: null });
+            expect(location?.versions).toEqual([
+                { version: '2', fields: [{ name: 'lat', type: 'decimal' }, { name: 'lon', type: 'decimal' }, { name: 'elevation', type: 'int32' }], description: SOURCE_STRUCTS[1].description, baseUrl: sourceUrl, declaredAt: expect.any(String) },
+                { version: '1', fields: [{ name: 'lat', type: 'decimal' }, { name: 'lon', type: 'decimal' }], description: SOURCE_STRUCTS[0].description, baseUrl: sourceUrl, declaredAt: expect.any(String) },
+            ]);
+            expect(location?.usedBy).toEqual([{ kind: 'struct', fqn: 'com.example.Station', version: '1', function: null, member: 'location', role: 'field', structVersion: '2' }]);
+            expect((await structs().getStruct('com.example.Station'))?.usedBy).toEqual([
+                { kind: 'function', fqn: 'com.example.Weather', version: null, function: 'stations', member: null, role: 'returns', structVersion: '1' },
+            ]);
+            // The peer's struct comes from the peer, and the peer's function names it.
+            const book = await structs().getStruct('org.archive.Book');
+            expect(book?.versions).toMatchObject([{ version: '1', baseUrl: peer.baseUrl }]);
+            expect(book?.usedBy).toMatchObject([{ kind: 'function', fqn: 'org.archive.Library', function: 'search', role: 'returns' }]);
+            expect(await repository.getStats()).toMatchObject({ structs: 3 });
+            expect((await searchStructs('elevation'))).toEqual(['com.example.Location']);
+        });
+
+        it('gathers a struct\'s versions from every node of its owner, and ignores other organizations and relayed copies', async () => {
+            const peer = await startNode({ resources: PEER_RESOURCES, structs: PEER_STRUCTS });
+            nodes = [peer, await startNode({ resources: [weather], structs: SOURCE_STRUCTS, startingPeer: peer.baseUrl, port })];
+            service = withStructs((baseUrl) => baseUrl === peer.baseUrl
+                ? [
+                    // Another node of the owner declared a later version.
+                    listed('com.example.Location', '3', SAMPLE_ORGANIZATION, peer.baseUrl),
+                    // Another organization's node claims the path later.
+                    listed('com.example.Station', '9', 'org_forger', peer.baseUrl),
+                ]
+                // The source relays a version as the peer's. Only the peer is believed about it.
+                : [listed('org.archive.Book', '7', SAMPLE_ORGANIZATION, peer.baseUrl)]);
+            await service.sync();
+
+            const location = await structs().getStruct('com.example.Location');
+            expect(location?.versions.map((version) => [version.version, version.baseUrl])).toEqual([['3', peer.baseUrl], ['2', sourceUrl], ['1', sourceUrl]]);
+            const station = await structs().getStruct('com.example.Station');
+            expect(station).toMatchObject({ ownerOrganizationId: SAMPLE_ORGANIZATION, latestVersion: '1' });
+            expect(station?.versions).toHaveLength(1);
+            expect((await structs().getStruct('org.archive.Book'))?.versions.map((version) => version.version)).toEqual(['1']);
+        });
+
+        it('keeps versions whose node can\'t be read, and marks structs no node lists removed', async () => {
+            const peer = await startNode({ resources: PEER_RESOURCES, structs: PEER_STRUCTS });
+            nodes = [peer, await startNode({ resources: [weather], structs: SOURCE_STRUCTS, startingPeer: peer.baseUrl, port })];
+            let status: (baseUrl: string) => number | undefined = () => undefined;
+            service = withStructs((baseUrl) => (baseUrl === peer.baseUrl ? [listed('com.example.Location', '3', SAMPLE_ORGANIZATION, peer.baseUrl)] : []), (baseUrl) => status(baseUrl));
+            await service.sync();
+
+            // Only the peer fails: its versions are kept, alongside the source's.
+            status = (baseUrl) => (baseUrl === peer.baseUrl ? 503 : undefined);
+            expect(await service.sync()).toMatchObject({ status: 'succeeded' });
+            expect((await structs().getStruct('com.example.Location'))?.versions.map((version) => version.version)).toEqual(['3', '2', '1']);
+            expect(await structs().getStruct('org.archive.Book')).toMatchObject({ removedAt: null });
+
+            // Nodes that predate structs answer 404, so they list none. The versions stay for the struct's page.
+            status = () => 404;
+            expect(await service.sync()).toMatchObject({ status: 'succeeded' });
+            expect(await searchStructs()).toEqual([]);
+            const removed = await structs().getStruct('com.example.Location');
+            expect(removed?.removedAt).not.toBeNull();
+            expect(removed?.versions).toHaveLength(3);
         });
     });
 

@@ -126,3 +126,17 @@
   border: 1px solid currentColor;
   color: var(--danger);
 }
+
+.structBadge {
+  font-size: 12px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  color: var(--accent);
+}
+
+/* What kind of thing a "used by" row is, wide enough that the rows line up. */
+.useKind {
+  min-width: 14ch;
+  color: var(--muted);
+  font-size: 13px;
+}

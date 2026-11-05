@@ -1,9 +1,10 @@
-// A peer of the source node, hosting org.archive.* resources, the org.archive.Visits contract and the org.archive.BookReturned event. It
+// A peer of the source node, hosting org.archive.* resources, the org.archive.Book struct, the org.archive.Visits contract and the org.archive.BookReturned event. It
 // refuses grant requests, so the registry shows its restricted functions as needing a grant issued out of band.
-import { PEER_CONTRACTS, PEER_EVENTS, PEER_EVENT_CONTRACTS, PEER_RESOURCES, startNode } from '@registry/node-fixtures';
+import { PEER_CONTRACTS, PEER_EVENTS, PEER_EVENT_CONTRACTS, PEER_RESOURCES, PEER_STRUCTS, startNode } from '@registry/node-fixtures';
 
 const node = await startNode({
     resources: PEER_RESOURCES,
+    structs: PEER_STRUCTS,
     events: PEER_EVENTS,
     contracts: [...PEER_CONTRACTS, ...PEER_EVENT_CONTRACTS],
     port: Number(process.env.PORT ?? 3101),

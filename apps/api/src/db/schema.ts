@@ -171,6 +171,44 @@ export const eventContractVersionsTable = pgTable("event_contract_versions", {
   unique("event_contract_versions_event_contract_id_version_unique").on(table.eventContractId, table.version),
 ]);
 
+/**
+ * Structs: named shapes of objects that functions, contracts, event types and other structs use as types. A
+ * struct's path belongs to one organization, and any of its nodes may declare versions, so the registry reads
+ * each version from the node that declared it (`GET /v1/structs`, which also lists those learned from peers).
+ */
+export const structTypesTable = pgTable("struct_types", {
+  id: integer().primaryKey().generatedAlwaysAsIdentity(),
+  path: text().notNull(),
+  name: text().notNull(),
+  // `path.name`.
+  fqn: text().notNull().unique(),
+  // The organization that owns the path, the only one whose nodes may declare versions of it.
+  ownerOrganizationId: varchar("owner_organization_id", { length: 64 }).notNull(),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  // Set when no node the registry reads lists a version of it. Its versions are kept.
+  removedAt: timestamp("removed_at", { withTimezone: true }),
+}, (table) => [
+  index("struct_types_fqn_trgm_idx").using("gin", table.fqn.op("gin_trgm_ops")),
+]);
+
+/** The declared versions of a struct. Versions are immutable and never deleted on the node. */
+export const structTypeVersionsTable = pgTable("struct_type_versions", {
+  id: integer().primaryKey().generatedAlwaysAsIdentity(),
+  structTypeId: integer("struct_type_id").notNull().references(() => structTypesTable.id, { onDelete: 'cascade' }),
+  version: varchar({ length: 64 }).notNull(),
+  // `[{ name, type }]`, RequestScript type strings.
+  fields: jsonb().$type<{ name: string; type: string }[]>().notNull(),
+  description: text(),
+  // The node that declared this version, the only one the registry reads it from.
+  baseUrl: text("base_url").notNull(),
+  hostNodeId: integer("host_node_id").references(() => nodesTable.id, { onDelete: 'set null' }),
+  // `createdAt` as the node lists it.
+  declaredAt: timestamp("declared_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  unique("struct_type_versions_struct_type_id_version_unique").on(table.structTypeId, table.version),
+]);
+
 export const SYNC_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;
 export type SyncRunStatus = typeof SYNC_RUN_STATUSES[number];
 

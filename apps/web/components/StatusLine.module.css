@@ -35,3 +35,7 @@
 .muted {
   color: var(--muted);
 }
+
+.line .accent {
+  color: var(--accent);
+}

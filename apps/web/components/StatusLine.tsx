@@ -11,6 +11,7 @@ export function StatusLine({ stats }: { stats: Stats }) {
       <b className={styles.cyan}>{stats.inferenceFunctions}</b> inference ·{' '}
       <b className={styles.violet}>{stats.contracts}</b> contracts ·{' '}
       <b className={styles.cyan}>{stats.eventTypes}</b> events · <b className={styles.violet}>{stats.eventContracts}</b> event contracts ·{' '}
+      <b className={styles.accent}>{stats.structs}</b> structs ·{' '}
       <b className={styles.danger}>{stats.restrictedFunctions}</b> restricted · <b>{stats.nodes}</b> nodes ·{' '}
       <span className={styles.muted}>{sync?.finishedAt ? `synced ${timeAgo(sync.finishedAt)}` : 'awaiting first sync'}</span>
     </p>

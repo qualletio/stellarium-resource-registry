@@ -2,6 +2,7 @@ import { isContractManifest, isInferenceManifest, type NodeInfo, type PaymentMan
 import { capabilityExample, formatMicroUsd, formatUsd, requestScriptExample } from '@/lib/format';
 import { CopyButton } from './CopyButton';
 import styles from './FunctionCard.module.css';
+import { TypeName } from './TypeName';
 
 interface Props {
   path: string;
@@ -96,11 +97,11 @@ export function FunctionCard({ path, name, fn, host }: Props) {
               {index > 0 && <span className={styles.punct}>, </span>}
               <span className={styles.param}>{parameter.name}</span>
               <span className={styles.punct}>: </span>
-              <span className={styles.type}>{parameter.type}</span>
+              <TypeName type={parameter.type} className={styles.type} />
             </span>
           ))}
           <span className={styles.punct}>): </span>
-          <span className={styles.type}>{fn.returnType}</span>
+          <TypeName type={fn.returnType} className={styles.type} />
         </h3>
         <div className={styles.badges}>
           {fn.kind === 'inference' && <span className={styles.badgeInference}>inference</span>}

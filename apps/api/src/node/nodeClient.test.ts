@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_CONTRACT_SOURCE_BYTES, parseContract, parseEventSubscription, parseEventType, parseResource } from './nodeClient.js';
+import { MAX_CONTRACT_SOURCE_BYTES, MAX_STRUCT_FIELDS, parseContract, parseEventSubscription, parseEventType, parseResource, parseStruct } from './nodeClient.js';
 
 const valid = {
     path: 'com.example',
@@ -195,5 +195,38 @@ describe('parseEventSubscription', () => {
         ['a non-string owner', { ...subscription, ownerOrganizationId: 3 }],
     ])('rejects %s', (_, value) => {
         expect(parseEventSubscription(value)).toBeUndefined();
+    });
+});
+
+const struct = {
+    path: 'com.example',
+    name: 'Address',
+    version: '1',
+    fields: [{ name: 'street', type: 'string' }, { name: 'owner', type: 'com.example.Customer@2' }],
+    ownerOrganizationId: 'org_1',
+    baseUrl: 'http://node.example/',
+    description: 'A postal address.',
+    createdAt: '2026-11-04T12:00:00.000Z',
+};
+
+describe('parseStruct', () => {
+    it('accepts a well-formed struct and normalizes its base URL', () => {
+        expect(parseStruct(struct)).toEqual({ ...struct, baseUrl: 'http://node.example', createdAt: new Date(struct.createdAt) });
+        expect(parseStruct({ ...struct, version: '1.10', description: null })).toMatchObject({ version: '1.10', description: undefined });
+    });
+
+    it.each([
+        ['a missing path', { ...struct, path: '' }],
+        ['a non-numeric version', { ...struct, version: 'v1' }],
+        ['a missing version', { ...struct, version: undefined }],
+        ['a malformed field', { ...struct, fields: [{ name: 'street', type: '' }] }],
+        ['a repeated field', { ...struct, fields: [{ name: 'a', type: 'string' }, { name: 'a', type: 'int32' }] }],
+        ['more fields than a node allows', { ...struct, fields: Array.from({ length: MAX_STRUCT_FIELDS + 1 }, (_, i) => ({ name: `f${i}`, type: 'string' })) }],
+        ['a missing owner', { ...struct, ownerOrganizationId: null }],
+        ['a non-http base URL', { ...struct, baseUrl: 'javascript:alert(1)' }],
+        ['a non-string description', { ...struct, description: 3 }],
+        ['an invalid declare time', { ...struct, createdAt: 'today' }],
+    ])('rejects %s', (_, value) => {
+        expect(parseStruct(value)).toBeUndefined();
     });
 });

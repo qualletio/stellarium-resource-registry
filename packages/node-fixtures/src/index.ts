@@ -1,6 +1,7 @@
 // Real stellarium-ts nodes for the local node apps and the API's tests, plus sample resources
 // that cover every combination the registry shows: free and paid, open and restricted, fixed, inference
-// and contract, and event types with the event contracts consuming them.
+// and contract, event types with the event contracts consuming them, and structs that functions and other
+// structs name as types.
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import Fastify from 'fastify';
@@ -67,7 +68,7 @@ export const SOURCE_RESOURCES: ResourceSpec[] = [
     { path: 'com.example', name: 'Weather', website: 'https://weather.example.com', description: 'Current conditions and forecasts for cities worldwide.', functions: [
         described(paid('temperature', 'city: string', 'int32', 10_000), 'The current temperature, in degrees Celsius.', { city: 'A city name, such as "Oslo".' }),
         described(paid('forecast', 'city: string, days: int32', 'string', 2_500), 'A daily forecast as JSON.', { city: 'A city name, such as "Oslo".', days: 'How many days ahead, from 1 to 7.' }),
-        described(open('stations', '', '[]string'), 'IDs of the weather stations readings come from.'),
+        described(open('stations', '', '[]com.example.Station@1'), 'The weather stations readings come from.'),
     ] },
     { path: 'com.example', name: 'Echo', description: 'Returns what you send it. Useful for testing a client.', functions: [
         described(open('echo', 'message: string', 'string'), 'Returns the message unchanged.', { message: 'Any text.' }),
@@ -84,7 +85,7 @@ export const SOURCE_RESOURCES: ResourceSpec[] = [
     ] },
     { path: 'sh.stellarium.tools', name: 'Geocoder', website: 'https://geocoder.example.com', description: 'Converts between street addresses and coordinates.', functions: [
         described(paid('lookup', 'address: string', 'string', 1_000), 'The coordinates of an address, as "lat,lon".', { address: 'A street address, such as "1 Main St, Springfield".' }),
-        described(paid('reverse', 'lat: float64, lon: float64', 'string', 1_000), 'The nearest street address to a point.', { lat: 'Latitude, in degrees.', lon: 'Longitude, in degrees.' }),
+        described(paid('reverse', 'lat: decimal, lon: decimal', 'string', 1_000), 'The nearest street address to a point.', { lat: 'Latitude, in degrees.', lon: 'Longitude, in degrees.' }),
     ] },
     { path: 'ai.example', name: 'Assistant', website: 'https://assistant.example.com', description: 'Text generation, priced per token.', functions: [
         described(perToken(inference('complete', 'prompt: string', 'string'), 3_000_000, 15_000_000), 'Continues the prompt.', {
@@ -98,7 +99,7 @@ export const SOURCE_RESOURCES: ResourceSpec[] = [
 /** Resources for a peer of the source node. Its host does not issue grants on request. */
 export const PEER_RESOURCES: ResourceSpec[] = [
     { path: 'org.archive', name: 'Library', website: 'https://archive.example.org', description: 'Search, check out and scan books from a library catalogue.', functions: [
-        described(open('search', 'query: string, limit: int32', '[]string'), 'Book IDs matching a title or author.', { query: 'Words from a title or author.', limit: 'The most results to return.' }),
+        described(open('search', 'query: string, limit: int32', '[]org.archive.Book@1'), 'Books matching a title or author.', { query: 'Words from a title or author.', limit: 'The most results to return.' }),
         restricted(described(open('checkout', 'bookId: string', 'boolean'), 'Checks out a book. Returns false when it is already out.', { bookId: 'A book ID from search.' })),
         described(paid('scan', 'bookId: string, page: int32', 'string', 7_500), 'The text of one scanned page.', { bookId: 'A book ID from search.', page: 'The page number, from 1.' }),
         // Output is free: callers pay only for the book text they send.
@@ -162,6 +163,27 @@ export const PEER_CONTRACTS: ContractSpec[] = [
     },
 ];
 
+/** A struct to declare: RequestScript source such as `struct path.Name@version(field: type)`. */
+export interface StructSpec {
+    source: string;
+    description?: string;
+}
+
+/**
+ * Structs for the node the registry syncs from, declared before anything names them. Location has two
+ * versions; Station names the second, and Weather.stations returns a list of Stations.
+ */
+export const SOURCE_STRUCTS: StructSpec[] = [
+    { description: 'A point on the globe, in degrees.', source: 'struct com.example.Location@1(lat: decimal, lon: decimal)' },
+    { description: 'A point on the globe, in degrees, with its elevation in meters.', source: 'struct com.example.Location@2(lat: decimal, lon: decimal, elevation: int32)' },
+    { description: 'A weather station.', source: 'struct com.example.Station@1(id: string, name: string, location: com.example.Location@2)' },
+];
+
+/** Structs for the peer node. Library.search returns a list of Books. */
+export const PEER_STRUCTS: StructSpec[] = [
+    { description: 'A book in the catalogue.', source: 'struct org.archive.Book@1(id: string, title: string, authors: []string, year: int32)' },
+];
+
 /** An event type to declare: RequestScript source such as `event path.Name@version(field: type)`. */
 export interface EventSpec {
     source: string;
@@ -223,6 +245,8 @@ export interface RunningNode {
     deployContract: (contract: ContractSpec) => Promise<void>;
     /** Deletes `path.Name@version`, or every version of `path.Name`. */
     deleteContract: (ref: string) => Promise<void>;
+    /** Declares a struct with the node's API key. Throws if the node refuses it. Structs can't be deleted. */
+    declareStruct: (struct: StructSpec) => Promise<void>;
     /** Declares an event type with the node's API key. Throws if the node refuses it. */
     declareEvent: (event: EventSpec) => Promise<void>;
     /** Deletes event type `path.Name@version`, or every version of `path.Name`. */
@@ -232,6 +256,8 @@ export interface RunningNode {
 
 export interface StartNodeOptions {
     resources: ResourceSpec[];
+    /** Declared in order once the node listens, first, since event types, contracts and functions may name them. */
+    structs?: StructSpec[];
     /** Declared in order once the node listens, before its contracts are deployed. */
     events?: EventSpec[];
     /** Deployed in order once the node listens, before `startNode` resolves. Event contracts among them need their event types in `events`. */
@@ -341,10 +367,12 @@ export async function startNode(options: StartNodeOptions): Promise<RunningNode>
     };
     const deployContract = (contract: ContractSpec) => admin('POST', '/contracts', contract);
     const deleteContract = (ref: string) => admin('DELETE', `/contracts/${encodeURIComponent(ref)}`);
+    const declareStruct = (struct: StructSpec) => admin('POST', '/structs', struct);
     const declareEvent = (event: EventSpec) => admin('POST', '/events', event);
     const deleteEvent = (ref: string) => admin('DELETE', `/events/${encodeURIComponent(ref)}`);
 
     try {
+        for (const struct of options.structs ?? []) await declareStruct(struct);
         for (const event of options.events ?? []) await declareEvent(event);
         for (const contract of options.contracts ?? []) await deployContract(contract);
     } catch (error) {
@@ -352,5 +380,5 @@ export async function startNode(options: StartNodeOptions): Promise<RunningNode>
         throw error;
     }
 
-    return { baseUrl, publicKey: publicKey.toString('base64url'), executed, deployContract, deleteContract, declareEvent, deleteEvent, close: () => fastify.close() };
+    return { baseUrl, publicKey: publicKey.toString('base64url'), executed, deployContract, deleteContract, declareStruct, declareEvent, deleteEvent, close: () => fastify.close() };
 }
