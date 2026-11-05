@@ -1,14 +1,15 @@
 import styles from './SourceCode.module.css';
 
 /**
- * RequestScript's keywords (`KEYWORDS` in requestscript), `state`, which only follows `var`, and the event
- * declarations' `event`, `restricted`, `consumes` and `emit`.
+ * RequestScript's keywords (`KEYWORDS` in requestscript), `state`, which only follows `var`, the event
+ * declarations' `event`, `restricted`, `consumes` and `emit`, and `struct`.
  */
-const KEYWORDS = new Set(['request', 'contract', 'var', 'const', 'return', 'if', 'else', 'state', 'event', 'restricted', 'consumes', 'emit']);
+const KEYWORDS = new Set(['request', 'contract', 'var', 'const', 'return', 'if', 'else', 'state', 'event', 'restricted', 'consumes', 'emit', 'struct']);
 const LITERALS = new Set(['true', 'false', 'null']);
 /** Values every contract can read. */
 const BUILTINS = new Set(['caller', 'jwt']);
-const TYPE = /^(u?int(8|16|32|64)|float(32|64)|string|boolean|bool|decimal|any)$/;
+/** RequestScript's primitive types (`RuntimeType` in requestscript). */
+const TYPE = /^(int32|int64|string|boolean|decimal|object|any)$/;
 
 const TOKEN = /(\/\/.*)|("(?:[^"\\]|\\.)*"?)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|(\s+|.)/g;
 

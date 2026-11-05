@@ -295,6 +295,7 @@ export class RegistryRepository {
                 count(*) filter (where f.kind = 'contract') as contracts,
                 (select count(*) from event_types where removed_at is null) as event_types,
                 (select count(*) from event_contracts where removed_at is null) as event_contracts,
+                (select count(*) from struct_types where removed_at is null) as structs,
                 (select count(*) from nodes) as nodes
             from resource_functions f
             join resources r on r.id = f.resource_id and r.removed_at is null
@@ -313,6 +314,7 @@ export class RegistryRepository {
             contracts: Number(counts.contracts),
             eventTypes: Number(counts.event_types),
             eventContracts: Number(counts.event_contracts),
+            structs: Number(counts.structs),
             nodes: Number(counts.nodes),
             sourceUrl: this.sourceUrl,
             lastSync: lastSync ? toSyncRun(lastSync) : null,

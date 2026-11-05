@@ -5,15 +5,17 @@ import { EventList } from '@/components/EventList';
 import { Pagination } from '@/components/Pagination';
 import { ResourceList } from '@/components/ResourceList';
 import { SearchPrompt } from '@/components/SearchPrompt';
+import { StructList } from '@/components/StructList';
 import terminal from '@/components/Terminal.module.css';
-import { searchEvents, searchParamsFor, searchResources } from '@/lib/api';
+import { searchEvents, searchParamsFor, searchResources, searchStructs } from '@/lib/api';
 import { pageMetadata } from '@/lib/site';
 import styles from './page.module.css';
 
 
 const PAGE_SIZE = 25;
-/** Event types shown under a resource search, with a link to the rest. */
+/** Event types and structs shown under a resource search, each with a link to the rest. */
 const EVENT_PREVIEW = 3;
+const STRUCT_PREVIEW = 3;
 
 type Params = Record<string, string | string[] | undefined>;
 
@@ -55,11 +57,13 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
 
 export default async function SearchPage({ searchParams }: { searchParams: Promise<Params> }) {
   const query = parseQuery(await searchParams);
-  // Events match a query too, unless a filter only resources have is on.
+  // Events and structs match a query too, unless a filter only resources have is on. Structs are never restricted.
   const resourceFilters = query.in !== 'all' || query.paid || query.inference || query.contract;
-  const [results, events] = await Promise.all([
+  const preview = Boolean(query.q) && !resourceFilters && query.offset === 0;
+  const [results, events, structs] = await Promise.all([
     searchResources({ ...query, limit: PAGE_SIZE }),
-    query.q && !resourceFilters && query.offset === 0 ? searchEvents({ q: query.q, restricted: query.restricted, limit: EVENT_PREVIEW }) : undefined,
+    preview ? searchEvents({ q: query.q, restricted: query.restricted, limit: EVENT_PREVIEW }) : undefined,
+    preview && !query.restricted ? searchStructs({ q: query.q, limit: STRUCT_PREVIEW }) : undefined,
   ]);
   const shown = results.items.length;
 
@@ -98,6 +102,17 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
           {events.nextOffset !== null && (
             <p className={styles.total}>
               <Link href={`/events?${new URLSearchParams({ q: query.q, ...(query.restricted && { restricted: 'true' }) })}`}>more events →</Link>
+            </p>
+          )}
+        </section>
+      )}
+      {structs && structs.items.length > 0 && (
+        <section className={terminal.section}>
+          <h2 className={terminal.rule}>structs</h2>
+          <StructList structs={structs.items} query={query.q} />
+          {structs.nextOffset !== null && (
+            <p className={styles.total}>
+              <Link href={`/structs?${new URLSearchParams({ q: query.q })}`}>more structs →</Link>
             </p>
           )}
         </section>

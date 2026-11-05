@@ -1,5 +1,5 @@
 import 'server-only';
-import type { ContractVersion, EventContractDetail, EventSearchQuery, EventTypeDetail, EventTypeSummary, Page, ResourceDetail, ResourceSummary, SearchQuery, Stats } from '@registry/types';
+import type { ContractVersion, EventContractDetail, EventSearchQuery, EventTypeDetail, EventTypeSummary, Page, ResourceDetail, ResourceSummary, SearchQuery, Stats, StructDetail, StructSearchQuery, StructSummary } from '@registry/types';
 
 const API_URL = (process.env.API_URL ?? 'http://127.0.0.1:4000').replace(/\/+$/, '');
 
@@ -75,3 +75,16 @@ export const getEventContract = (fqn: string) => getOptional<EventContractDetail
 /** One version of an event contract with its source. Undefined when the registry has no such version. */
 export const getEventContractVersion = (fqn: string, version: string) =>
   getOptional<ContractVersion>(`/event-contracts/${encodeURIComponent(fqn)}/versions/${encodeURIComponent(version)}`);
+
+export function structSearchParamsFor(query: StructSearchQuery): URLSearchParams {
+  const params = new URLSearchParams();
+  if (query.q) params.set('q', query.q);
+  if (query.offset) params.set('offset', String(query.offset));
+  if (query.limit) params.set('limit', String(query.limit));
+  return params;
+}
+
+export const searchStructs = (query: StructSearchQuery) => get<Page<StructSummary>>(`/structs?${structSearchParamsFor(query)}`);
+
+/** Undefined when the registry has never seen the struct. */
+export const getStruct = (fqn: string) => getOptional<StructDetail>(`/structs/${encodeURIComponent(fqn)}`);

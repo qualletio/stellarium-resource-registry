@@ -1,0 +1,11 @@
+.struct {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
+.struct:hover {
+  color: var(--accent);
+  text-decoration-style: solid;
+}

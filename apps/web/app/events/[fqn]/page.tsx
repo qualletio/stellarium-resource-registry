@@ -7,6 +7,7 @@ import { CopyButton } from '@/components/CopyButton';
 import styles from '@/components/Detail.module.css';
 import { SourceCode } from '@/components/SourceCode';
 import terminal from '@/components/Terminal.module.css';
+import { FieldList } from '@/components/TypeName';
 import { getEventType } from '@/lib/api';
 import { eventDeclaration, eventFields, formatDate, timeAgo } from '@/lib/format';
 import { pageMetadata } from '@/lib/site';
@@ -76,7 +77,7 @@ export default async function EventPage({ params, searchParams }: Props) {
 
       <dl className={styles.meta}>
         <dt>fields</dt>
-        <dd>{latest.fields.length === 0 ? <span className={styles.muted}>none</span> : <code>{eventFields(latest.fields)}</code>}</dd>
+        <dd>{latest.fields.length === 0 ? <span className={styles.muted}>none</span> : <code><FieldList fields={latest.fields} /></code>}</dd>
         <dt>owner</dt>
         <dd>
           <code>{event.ownerOrganizationId}</code> <span className={styles.muted}>· the only organization whose scripts may emit it</span>
@@ -138,7 +139,7 @@ export default async function EventPage({ params, searchParams }: Props) {
                   @{version.version}
                 </Link>
                 <span className={contract.signature}>
-                  {eventFields(version.fields)}
+                  <FieldList fields={version.fields} />
                   {version.restricted && ' restricted'}
                 </span>
                 <span className={contract.deployed} title={version.declaredAt}>

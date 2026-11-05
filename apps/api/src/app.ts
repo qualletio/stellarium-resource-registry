@@ -4,6 +4,7 @@ import Fastify, { type FastifyServerOptions } from 'fastify';
 import type { Database } from './db/database.js';
 import { EventRepository } from './registry/eventRepository.js';
 import { RegistryRepository } from './registry/registryRepository.js';
+import { StructRepository } from './registry/structRepository.js';
 import routes from './routes.js';
 import type { SyncService } from './sync/syncService.js';
 
@@ -33,6 +34,7 @@ export async function buildApp(options: AppOptions) {
         prefix: '/v1',
         repository: new RegistryRepository(options.db, options.sourceUrl),
         events: new EventRepository(options.db),
+        structs: new StructRepository(options.db),
         syncService: options.syncService,
         adminApiKey: options.adminApiKey,
     });

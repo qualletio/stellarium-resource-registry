@@ -295,6 +295,87 @@ export interface EventContractDetail {
     removedAt: string | null;
 }
 
+/** A field of a struct: its name and RequestScript type string. A struct type in it names its version. */
+export interface StructField {
+    name: string;
+    type: string;
+}
+
+/** One declared version of a struct. Versions are immutable and never deleted. */
+export interface StructVersion {
+    version: string;
+    fields: StructField[];
+    description: string | null;
+    /** The node that declared this version. Any node of the struct's owner may declare one. */
+    baseUrl: string;
+    /** When the declaring node says the version was declared. */
+    declaredAt: string;
+}
+
+export interface StructSearchQuery {
+    /** Matches the struct's fqn and its latest version's field names. */
+    q?: string;
+    offset?: number;
+    limit?: number;
+}
+
+export interface StructSummary {
+    /** `path.Name` */
+    fqn: string;
+    path: string;
+    name: string;
+    /** The organization that owns its path, the only one whose nodes may declare versions of it. */
+    ownerOrganizationId: string;
+    latestVersion: string;
+    versionCount: number;
+    /** The latest version's fields and description. */
+    fields: StructField[];
+    description: string | null;
+    /** Names of the latest version's fields that matched the search. */
+    matchedFields: string[];
+    lastSeenAt: string;
+    removedAt: string | null;
+}
+
+/** What names a struct as a type. */
+export type StructUseKind = 'function' | 'contract' | 'event' | 'eventContract' | 'struct';
+
+/**
+ * Something that names a struct: a live resource's function, a contract or event contract's latest version,
+ * or a version of an event type or struct.
+ */
+export interface StructUse {
+    kind: StructUseKind;
+    /** The resource, contract, event type, event contract or struct, as `path.Name`. */
+    fqn: string;
+    /** The version that names it, for everything but a function. */
+    version: string | null;
+    /** For a function: the function's name. */
+    function: string | null;
+    /** The parameter or field whose type names it. Null for a return type, or a contract's source. */
+    member: string | null;
+    /** `parameter` and `returns` are a function's, `field` an event type's or struct's, `source` a contract's. */
+    role: 'parameter' | 'returns' | 'field' | 'source';
+    /** The version of the struct it names. */
+    structVersion: string;
+}
+
+export interface StructDetail {
+    fqn: string;
+    path: string;
+    name: string;
+    ownerOrganizationId: string;
+    latestVersion: string;
+    /** Newest first. */
+    versions: StructVersion[];
+    /** Live resources, contracts, event types and structs naming any version of it. */
+    usedBy: StructUse[];
+    firstSeenAt: string;
+    lastSeenAt: string;
+    /** Set when no node the registry reads lists it any more. */
+    removedAt: string | null;
+}
+
 export interface SyncRun {
     id: number;
     sourceUrl: string;
@@ -318,6 +399,8 @@ export interface Stats {
     eventTypes: number;
     /** Live event contracts. */
     eventContracts: number;
+    /** Live structs. */
+    structs: number;
     nodes: number;
     sourceUrl: string;
     lastSync: SyncRun | null;

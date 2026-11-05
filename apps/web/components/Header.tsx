@@ -5,6 +5,7 @@ import { ThemeToggle } from './ThemeToggle';
 const NAV = [
   { href: '/search', label: 'search' },
   { href: '/events', label: 'events' },
+  { href: '/structs', label: 'structs' },
 ];
 
 export function Header() {

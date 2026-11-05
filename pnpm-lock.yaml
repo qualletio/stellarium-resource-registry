@@ -300,8 +300,8 @@ importers:
         specifier: ^5.12.7
         version: 5.12.7
       stellarium-ts:
-        specifier: 0.21.0
-        version: 0.21.0(@electric-sql/pglite@0.5.10)(@types/pg@8.23.1)
+        specifier: 0.22.0
+        version: 0.22.0(@electric-sql/pglite@0.5.10)(@types/pg@8.23.1)
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.5.15
@@ -2108,8 +2108,8 @@ packages:
   real-require@1.0.0:
     resolution: {integrity: sha512-P4nbQYQfePJxRSmY+v/KINxVucm4NF3p3s7pJveMTtom52FR4YGltUQLB8idDXwDDWW+eYrWDFbuzUnjoWHF7g==}
 
-  requestscript@1.6.0:
-    resolution: {integrity: sha512-aSqgEzFw1syR29CNf4OL/zkcX6IP8AuSZOB2nyY8UdhmkBIHHfoeKjmn+s+YBen/1ea6z1DdyDRkr+BEZaMgwA==}
+  requestscript@1.7.0:
+    resolution: {integrity: sha512-w/f0EajYicB+mqZzEPeAyeoHexfcTbRLtHFFDD0vWejfI1ZbO6V9QJkQl/Zv7nUwfn4eOn0q+DmKfv88VXI/yg==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -2244,8 +2244,8 @@ packages:
   std-env@4.3.0:
     resolution: {integrity: sha512-OtU/EgQ1kIm5KwqQpBC6ZEMXrZRui11w8zgfTWp8cdO9B8OaPsbA8bTHO2P+HNo1VlUTGMVBwPhydu6poeXiag==}
 
-  stellarium-ts@0.21.0:
-    resolution: {integrity: sha512-i+OTi+7B+WO0DJG4zrt27fsG6JBslnEWKt0zJXx2xTaBpCPRZSl2fqnwg3jeBQXrT3a7gj55fEAkuCCu4OcSrg==}
+  stellarium-ts@0.22.0:
+    resolution: {integrity: sha512-ix/s/Bkorvu6bnH5Okgrkgi8kYWxFg6bzIx0kznBlzfiJhEzPkgdwFnOcBrTvIOUym7VFKEsnEjl1eQ9a40fSw==}
     engines: {node: '>=20'}
 
   string_decoder@1.3.0:
@@ -3773,7 +3773,7 @@ snapshots:
 
   real-require@1.0.0: {}
 
-  requestscript@1.6.0(@electric-sql/pglite@0.5.10)(@types/pg@8.23.1)(sqlite3@6.0.1):
+  requestscript@1.7.0(@electric-sql/pglite@0.5.10)(@types/pg@8.23.1)(sqlite3@6.0.1):
     dependencies:
       drizzle-orm: 1.0.0-rc.4(@electric-sql/pglite@0.5.10)(@types/pg@8.23.1)(pg@8.23.1)(sqlite3@6.0.1)
       express: 5.3.0
@@ -4013,14 +4013,14 @@ snapshots:
 
   std-env@4.3.0: {}
 
-  stellarium-ts@0.21.0(@electric-sql/pglite@0.5.10)(@types/pg@8.23.1):
+  stellarium-ts@0.22.0(@electric-sql/pglite@0.5.10)(@types/pg@8.23.1):
     dependencies:
       '@fastify/rate-limit': 11.2.1
       dotenv: 18.0.8
       fastify: 5.12.7
       jose: 6.1.0
       pg: 8.23.1
-      requestscript: 1.6.0(@electric-sql/pglite@0.5.10)(@types/pg@8.23.1)(sqlite3@6.0.1)
+      requestscript: 1.7.0(@electric-sql/pglite@0.5.10)(@types/pg@8.23.1)(sqlite3@6.0.1)
       sqlite: 5.1.1
       sqlite3: 6.0.1
     transitivePeerDependencies:

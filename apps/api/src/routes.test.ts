@@ -21,7 +21,7 @@ describe('routes', () => {
                     paid('temperature', 'city: string', 'int32', 10_000),
                     paid('forecast', '', 'string', 2_500),
                 ] },
-                { path: 'com.example.weather', name: 'Radar', functions: [open('image', '', 'string')] },
+                { path: 'com.example.weather', name: 'Radar', functions: [open('image', 'near: com.example.Address@1.10', '[]com.example.Address@1')] },
                 { path: 'io.example', name: 'Ledger', functions: [restricted(open('balance', '', 'int64'))] },
                 { path: 'org.percent_sign', name: 'Literal', functions: [open('x', '', 'string')] },
                 { path: 'ai.example', name: 'Assistant', functions: [
@@ -30,7 +30,16 @@ describe('routes', () => {
                     paid('classify', 'text: string', 'string', 500),
                 ] },
             ],
+            structs: [
+                { source: 'struct com.example.Address@1(street: string, city: string)', description: 'A postal address' },
+                { source: 'struct com.example.Address@1.10(street: string, city: string, postcode: string)' },
+                { source: 'struct com.example.Address@1.9(street: string)' },
+                { source: 'struct com.example.AddressBook@1(owner: string, entries: []com.example.Address@1)' },
+                // `book` names AddressBook, whose name starts with Address's: it isn't a use of Address.
+                { source: 'struct com.example.Customer@1(name: string, home: com.example.Address@1.10, book: com.example.AddressBook@1)' },
+            ],
             events: [
+                { source: 'event com.example.Shipped(to: com.example.Address@1.10)' },
                 { source: 'event com.example.OrderPlaced(orderId: string, total: decimal)', description: 'An order was placed' },
                 { source: 'event com.example.OrderPlaced@1.10(orderId: string, total: decimal, currency: string)' },
                 { source: 'event com.example.OrderPlaced@1.9(orderId: string)' },
@@ -39,9 +48,11 @@ describe('routes', () => {
             contracts: [
                 { source: 'contract com.example.OnOrder consumes com.example.OrderPlaced@1.10 {\n  const seen = orderId\n}', description: 'Watches orders' },
                 { source: 'contract com.example.OnOrder@2 consumes com.example.OrderPlaced@1.10 {\n  const seen = currency\n}' },
+                { source: 'contract com.example.OnShipped consumes com.example.Shipped {\n  const where: com.example.Address@1.10 = to\n}' },
                 { source: 'contract com.example.Sum(a: int32, b: int32): int32 {\n  return a + b\n}', description: 'Adds two numbers' },
                 { source: 'contract com.example.Sum@1.10(a: int32, b: int32, c: int32): int32 {\n  return a + b + c\n}', description: 'Adds three numbers' },
-                { source: 'contract com.example.Sum@1.9(a: int32): int32 {\n  return a\n}' },
+                // Not the latest version, so it isn't counted as using Address.
+                { source: 'contract com.example.Sum@1.9(a: int32): int32 {\n  var unused: com.example.Address@1 = null\n  return a\n}' },
             ],
         });
         const syncService = new SyncService(database.db, { sourceUrl: node.baseUrl, grantProbeIntervalMs: 60_000 });
@@ -62,7 +73,7 @@ describe('routes', () => {
 
     it('reports stats', async () => {
         const { body } = await get('/v1/stats');
-        expect(body).toMatchObject({ resources: 6, functions: 9, paidFunctions: 5, restrictedFunctions: 1, inferenceFunctions: 2, contracts: 1, eventTypes: 2, eventContracts: 1, nodes: 1, lastSync: { status: 'succeeded' } });
+        expect(body).toMatchObject({ resources: 6, functions: 9, paidFunctions: 5, restrictedFunctions: 1, inferenceFunctions: 2, contracts: 1, eventTypes: 3, eventContracts: 2, structs: 3, nodes: 1, lastSync: { status: 'succeeded' } });
     });
 
     it('ranks an exact name above prefix and substring matches', async () => {
@@ -244,6 +255,58 @@ describe('routes', () => {
         // An event contract isn't a resource, and a resource isn't an event contract.
         expect((await get('/v1/resources/com.example.OnOrder')).status).toBe(404);
         expect((await get('/v1/event-contracts/com.example.Sum')).status).toBe(404);
+    });
+
+    it('searches structs by fqn or field name, exact names first', async () => {
+        const fqns = async (url: string) => (await get(url)).body.items.map((struct: { fqn: string }) => struct.fqn);
+        expect((await fqns('/v1/structs')).sort()).toEqual(['com.example.Address', 'com.example.AddressBook', 'com.example.Customer']);
+        expect(await fqns('/v1/structs?q=address')).toEqual(['com.example.Address', 'com.example.AddressBook']);
+        expect(await fqns('/v1/structs?q=_')).toEqual([]);
+
+        // 1.10 is the latest version, so its fields are the ones searched and shown.
+        const { body } = await get('/v1/structs?q=postcode');
+        expect(body).toEqual({
+            items: [{
+                fqn: 'com.example.Address',
+                path: 'com.example',
+                name: 'Address',
+                ownerOrganizationId: SAMPLE_ORGANIZATION,
+                latestVersion: '1.10',
+                versionCount: 3,
+                fields: [{ name: 'street', type: 'string' }, { name: 'city', type: 'string' }, { name: 'postcode', type: 'string' }],
+                description: null,
+                matchedFields: ['postcode'],
+                lastSeenAt: expect.any(String),
+                removedAt: null,
+            }],
+            nextOffset: null,
+        });
+        expect((await get('/v1/structs?limit=1000')).status).toBe(400);
+    });
+
+    it('returns a struct with its versions, newest first, and what names it', async () => {
+        const { status, body } = await get('/v1/structs/com.example.Address');
+        expect(status).toBe(200);
+        expect(body.versions.map((v: { version: string }) => v.version)).toEqual(['1.10', '1.9', '1']);
+        expect(body.versions[2]).toEqual({
+            version: '1',
+            fields: [{ name: 'street', type: 'string' }, { name: 'city', type: 'string' }],
+            description: 'A postal address',
+            baseUrl: node.baseUrl,
+            declaredAt: expect.any(String),
+        });
+        const use = (kind: string, fqn: string, version: string | null, fn: string | null, member: string | null, role: string, structVersion: string) =>
+            ({ kind, fqn, version, function: fn, member, role, structVersion });
+        expect(body.usedBy).toEqual([
+            use('function', 'com.example.weather.Radar', null, 'image', 'near', 'parameter', '1.10'),
+            use('function', 'com.example.weather.Radar', null, 'image', null, 'returns', '1'),
+            use('event', 'com.example.Shipped', '1', null, 'to', 'field', '1.10'),
+            use('eventContract', 'com.example.OnShipped', '1', null, null, 'source', '1.10'),
+            use('struct', 'com.example.AddressBook', '1', null, 'entries', 'field', '1'),
+            use('struct', 'com.example.Customer', '1', null, 'home', 'field', '1.10'),
+        ]);
+        expect((await get('/v1/structs/com.example.AddressBook')).body.usedBy).toEqual([use('struct', 'com.example.Customer', '1', null, 'book', 'field', '1')]);
+        expect((await get('/v1/structs/com.example.Missing')).status).toBe(404);
     });
 
     it('lists nodes and sync runs', async () => {

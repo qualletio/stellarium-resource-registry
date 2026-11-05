@@ -1,4 +1,4 @@
-import type { EventField, EventTypeVersion, FunctionParameter, ResourceFunction } from '@registry/types';
+import type { EventField, EventTypeVersion, FunctionParameter, ResourceFunction, StructField } from '@registry/types';
 
 export const MICRO_USD_PER_USD = 1_000_000;
 
@@ -31,11 +31,12 @@ export const signature = (fn: ResourceFunction) =>
   `${fn.name}(${fn.parameters.map((p) => `${p.name}: ${p.type}`).join(', ')}): ${fn.returnType}`;
 
 /** A placeholder argument of the parameter's RequestScript type. */
-function exampleValue(parameter: FunctionParameter): string {
+function exampleValue(parameter: Pick<FunctionParameter, 'name' | 'type'>): string {
   const type = parameter.type.toLowerCase();
+  if (type.startsWith('[]')) return '[]';
   if (type === 'string') return `"${parameter.name}"`;
   if (type.startsWith('int') || type.startsWith('uint')) return '0';
-  if (type.startsWith('float') || type === 'double') return '0.0';
+  if (type === 'decimal' || type.startsWith('decimal(') || type.startsWith('float') || type === 'double') return '0.0';
   if (type === 'boolean' || type === 'bool') return 'false';
   return 'null';
 }
@@ -72,3 +73,26 @@ export const eventFields = (fields: EventField[]) => (fields.length === 0 ? '' :
 /** `restricted event com.example.Alert@1(city: string)`: the declaration a node was given for the version. */
 export const eventDeclaration = (fqn: string, version: Pick<EventTypeVersion, 'version' | 'fields' | 'restricted'>) =>
   `${version.restricted ? 'restricted ' : ''}event ${fqn}@${version.version}${eventFields(version.fields)}`;
+
+/** A struct type: `[]` per list level, then `path.Name@version` (`typeToString` in requestscript). */
+const STRUCT_TYPE = /^((?:\[\])*)([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)@(\d+(?:\.\d+)*)$/;
+
+/** The struct a type string names, with the `[]` before it, or null for any other type. */
+export function structType(type: string): { lists: string; fqn: string; version: string } | null {
+  const match = STRUCT_TYPE.exec(type);
+  return match ? { lists: match[1], fqn: match[2], version: match[3] } : null;
+}
+
+/** The page for one version of a struct. */
+export const structHref = (fqn: string, version?: string) =>
+  `/structs/${encodeURIComponent(fqn)}${version ? `?version=${encodeURIComponent(version)}` : ''}`;
+
+/** `struct com.example.Address@1(street: string)`: the declaration a node was given for the version. */
+export const structDeclaration = (fqn: string, version: string, fields: StructField[]) => `struct ${fqn}@${version}(${fields.map((field) => `${field.name}: ${field.type}`).join(', ')})`;
+
+/** `var address: com.example.Address@1 = { street: "street" }`: a value of the struct, written as an object literal. */
+export function structExample(name: string, fqn: string, version: string, fields: StructField[]): string {
+  const binding = name.charAt(0).toLowerCase() + name.slice(1);
+  const literal = fields.length === 0 ? '{}' : `{\n${fields.map((field) => `  ${field.name}: ${exampleValue(field)}`).join(',\n')}\n}`;
+  return `var ${binding}: ${fqn}@${version} = ${literal}`;
+}

@@ -4,11 +4,13 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import type { EventRepository } from './registry/eventRepository.js';
 import type { RegistryRepository } from './registry/registryRepository.js';
 import { toSyncRun } from './registry/registryRepository.js';
+import type { StructRepository } from './registry/structRepository.js';
 import type { SyncService } from './sync/syncService.js';
 
 interface RouteOptions {
     repository: RegistryRepository;
     events: EventRepository;
+    structs: StructRepository;
     syncService: SyncService;
     adminApiKey: string | undefined;
 }
@@ -61,6 +63,15 @@ const eventSearchQuerySchema = {
     properties: {
         q: searchQuerySchema.properties.q,
         restricted: searchQuerySchema.properties.restricted,
+        offset: searchQuerySchema.properties.offset,
+        limit: searchQuerySchema.properties.limit,
+    },
+} as const;
+
+const structSearchQuerySchema = {
+    type: 'object',
+    properties: {
+        q: searchQuerySchema.properties.q,
         offset: searchQuerySchema.properties.offset,
         limit: searchQuerySchema.properties.limit,
     },
@@ -149,6 +160,21 @@ const routes: FastifyPluginAsync<RouteOptions> = async (fastify, options) => {
             return reply.status(404).send({ error: 'Event contract version not found' });
         }
         return contract;
+    });
+
+    /** Structs, searched by fqn or field name. */
+    fastify.get('/structs', { schema: { querystring: structSearchQuerySchema } }, async (request) => {
+        return options.structs.search(request.query as { q?: string; offset: number; limit: number });
+    });
+
+    /** A struct, its versions, and what names it. */
+    fastify.get('/structs/:fqn', { schema: { params: fqnParamsSchema } }, async (request, reply) => {
+        const { fqn } = request.params as { fqn: string };
+        const struct = await options.structs.getStruct(fqn);
+        if (!struct) {
+            return reply.status(404).send({ error: 'Struct not found' });
+        }
+        return struct;
     });
 
     fastify.get('/nodes', async () => ({ items: await repository.getNodes() }));

@@ -87,6 +87,21 @@ export interface NodeEventSubscription {
     ownerOrganizationId: string | null;
 }
 
+/** One version of a struct, as a node's `GET /v1/structs` lists it. */
+export interface NodeStruct {
+    path: string;
+    name: string;
+    version: string;
+    /** RequestScript type strings. A struct type in one names its version. */
+    fields: NodeEventField[];
+    /** The organization that owns the struct's path. */
+    ownerOrganizationId: string;
+    /** The node that declared this version. A node also lists the structs it learned from peers. */
+    baseUrl: string;
+    description?: string;
+    createdAt: Date;
+}
+
 /** The outcome of calling a restricted function without authorization. */
 export type GrantProbeResult =
     | { kind: 'restricted'; grantEndpoint: string | null }
@@ -291,12 +306,16 @@ export function parseContract(value: unknown): NodeContract | undefined {
 /** More fields than any event needs. Nodes cap an event's data at 32 KiB, so it can't carry many. */
 const MAX_EVENT_FIELDS = 256;
 
+/** Nodes refuse a struct with more (`MAX_STRUCT_FIELDS` in stellarium-ts). */
+export const MAX_STRUCT_FIELDS = 64;
+
 function parseOrganizationId(value: unknown): string | undefined {
     return isNonEmptyString(value) && value.length <= MAX_ORGANIZATION_ID_LENGTH ? value : undefined;
 }
 
-function parseEventFields(value: unknown): NodeEventField[] | undefined {
-    if (!Array.isArray(value) || value.length > MAX_EVENT_FIELDS) return undefined;
+/** `[{ name, type }]` with distinct names, at most `max` of them. */
+function parseFields(value: unknown, max: number): NodeEventField[] | undefined {
+    if (!Array.isArray(value) || value.length > max) return undefined;
     const fields: NodeEventField[] = [];
     const names = new Set<string>();
     for (const field of value) {
@@ -310,7 +329,7 @@ function parseEventFields(value: unknown): NodeEventField[] | undefined {
 export function parseEventType(value: unknown): NodeEventType | undefined {
     if (!isObject(value) || !isNonEmptyString(value.path) || !isNonEmptyString(value.name)) return undefined;
     if (typeof value.version !== 'string' || !VERSION_PATTERN.test(value.version)) return undefined;
-    const fields = parseEventFields(value.fields);
+    const fields = parseFields(value.fields, MAX_EVENT_FIELDS);
     const ownerOrganizationId = parseOrganizationId(value.ownerOrganizationId);
     const baseUrl = parseBaseUrl(value.baseUrl);
     if (!fields || !ownerOrganizationId || !baseUrl || typeof value.restricted !== 'boolean') return undefined;
@@ -324,6 +343,29 @@ export function parseEventType(value: unknown): NodeEventType | undefined {
         version: value.version,
         fields,
         restricted: value.restricted,
+        ownerOrganizationId,
+        baseUrl,
+        description: description.value,
+        createdAt,
+    };
+}
+
+export function parseStruct(value: unknown): NodeStruct | undefined {
+    if (!isObject(value) || !isNonEmptyString(value.path) || !isNonEmptyString(value.name)) return undefined;
+    if (typeof value.version !== 'string' || !VERSION_PATTERN.test(value.version)) return undefined;
+    const fields = parseFields(value.fields, MAX_STRUCT_FIELDS);
+    const ownerOrganizationId = parseOrganizationId(value.ownerOrganizationId);
+    const baseUrl = parseBaseUrl(value.baseUrl);
+    if (!fields || !ownerOrganizationId || !baseUrl) return undefined;
+    const description = parseDescription(value.description);
+    if (!description.ok) return undefined;
+    const createdAt = typeof value.createdAt === 'string' ? new Date(value.createdAt) : undefined;
+    if (!createdAt || Number.isNaN(createdAt.getTime())) return undefined;
+    return {
+        path: value.path,
+        name: value.name,
+        version: value.version,
+        fields,
         ownerOrganizationId,
         baseUrl,
         description: description.value,
@@ -470,6 +512,27 @@ export class NodeClient {
             if (subscription) subscriptions.push(subscription);
         }
         return { subscriptions, invalid: body.subscriptions.length - subscriptions.length };
+    }
+
+    /**
+     * Every version of every struct the node knows: the ones it declared, then the ones it learned from peers,
+     * each with the `baseUrl` of the node that declared it. Malformed entries are skipped and counted in
+     * `invalid`. Null when the node predates structs and has no such route.
+     */
+    async getAllStructs(): Promise<{ structs: NodeStruct[]; invalid: number } | null> {
+        let raw: unknown[];
+        try {
+            raw = await this.getAllPages('/structs', 'structs');
+        } catch (error) {
+            if (error instanceof NodeRequestError && error.status === 404) return null;
+            throw error;
+        }
+        const structs: NodeStruct[] = [];
+        for (const item of raw) {
+            const struct = parseStruct(item);
+            if (struct) structs.push(struct);
+        }
+        return { structs, invalid: raw.length - structs.length };
     }
 
     async getAllPeers(): Promise<NodePeer[]> {
