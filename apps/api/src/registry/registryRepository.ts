@@ -48,8 +48,7 @@ export function compareVersions(a: string, b: string): number {
 
 const toContractVersionSummary = (row: ContractVersionRow): ContractVersionSummary => ({
     version: row.version,
-    parameters: row.parameters,
-    returnType: row.returnType,
+    functions: row.functions,
     description: row.description,
     deployedAt: iso(row.deployedAt) as string,
 });
@@ -232,6 +231,7 @@ export class RegistryRepository {
                 paymentManifest: toPaymentManifest(fn),
                 restricted: fn.restricted,
                 kind: fn.kind,
+                payable: fn.payable,
             })),
             contract: functions.some((fn) => fn.kind === 'contract') ? await this.getContractInfo(resource.id, resource.contractSyncedAt) : null,
             host: row.nodes ? toNodeInfo(row.nodes) : null,
@@ -292,7 +292,8 @@ export class RegistryRepository {
                 count(f.recipient_organization_id) as paid_functions,
                 count(*) filter (where f.restricted) as restricted_functions,
                 count(*) filter (where f.kind = 'inference') as inference_functions,
-                count(*) filter (where f.kind = 'contract') as contracts,
+                -- A contract's resource has a function per pub fn, so contracts are counted by resource.
+                count(distinct f.resource_id) filter (where f.kind = 'contract') as contracts,
                 (select count(*) from event_types where removed_at is null) as event_types,
                 (select count(*) from event_contracts where removed_at is null) as event_contracts,
                 (select count(*) from struct_types where removed_at is null) as structs,

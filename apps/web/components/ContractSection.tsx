@@ -32,8 +32,8 @@ export function ContractSection({ fqn, contract, shown, missingVersion, basePath
       <p className={styles.intro}>
         {intro ?? (
           <>
-            A RequestScript script deployed to its host. Calls run the latest version, and every version&apos;s source is public, so you
-            can read what a call does before you make it.
+            A RequestScript script deployed to its host, whose <code>pub fn</code>s are the functions above. Calls run the latest
+            version, and every version&apos;s source is public, so you can read what a call does before you make it.
           </>
         )}
       </p>
@@ -78,9 +78,11 @@ export function ContractSection({ fqn, contract, shown, missingVersion, basePath
                   <Link href={versionHref(version.version)} className={styles.versionLink} aria-current={current ? 'true' : undefined} scroll={false}>
                     @{version.version}
                   </Link>
-                  {/* An event contract has no parameters or return type: the event's fields are its parameters. */}
+                  {/* Its pub fns. An event contract lists none: its handler takes the event's fields. */}
                   <span className={styles.signature}>
-                    {version.returnType !== '' && `(${version.parameters.map((parameter) => `${parameter.name}: ${parameter.type}`).join(', ')}): ${version.returnType}`}
+                    {version.functions
+                      .map((fn) => `${fn.payable ? 'payable ' : ''}${fn.name}(${fn.parameters.map((parameter) => `${parameter.name}: ${parameter.type}`).join(', ')})${fn.returnType === 'void' ? '' : `: ${fn.returnType}`}`)
+                      .join(' · ')}
                   </span>
                   <span className={styles.deployed} title={version.deployedAt}>
                     {formatDate(version.deployedAt)}

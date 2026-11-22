@@ -114,51 +114,71 @@ export const PEER_RESOURCES: ResourceSpec[] = [
     ] },
 ];
 
-/** A contract to deploy: RequestScript source declaring `contract path.Name@version(...): type`. */
+/** A contract to deploy: RequestScript source declaring `contract path.Name@version { pub fn ... }`. */
 export interface ContractSpec {
     source: string;
     description?: string;
 }
 
-/** Contracts for the node the registry syncs from. Outlook has two versions; calls run the second. */
+/** Contracts for the node the registry syncs from. Outlook has two versions; the second adds `forecast`. */
 export const SOURCE_CONTRACTS: ContractSpec[] = [
     {
         description: 'Today\'s weather in words.',
-        source: `contract com.example.Outlook(city: string): string {
+        source: `contract com.example.Outlook {
     const weather: com.example.Weather
-    const today = weather.temperature(city: city)
-    if (today.error != null) {
-        return "unknown"
+
+    pub fn today(city: string): string {
+        const today = weather.temperature(city: city)
+        if (today.error != null) {
+            return "unknown"
+        }
+        return "\${today.value} degrees"
     }
-    return "\${today.value} degrees"
 }`,
     },
     {
         description: 'Today\'s weather in words, with a forecast.',
-        source: `contract com.example.Outlook@2(city: string, days: int32): string {
+        source: `contract com.example.Outlook@2 {
     const weather: com.example.Weather
-    const today = weather.temperature(city: city)
-    if (today.error != null) {
-        return "unknown"
-    }
-    const ahead = weather.forecast(city: city, days: days)
-    if (ahead.error != null) {
+
+    fn degrees(city: string): string {
+        const today = weather.temperature(city: city)
+        if (today.error != null) {
+            return "unknown"
+        }
         return "\${today.value} degrees"
     }
-    return "\${today.value} degrees, then \${ahead.value}"
+
+    pub fn today(city: string): string {
+        return degrees(city: city)
+    }
+
+    pub fn forecast(city: string, days: int32): string {
+        const ahead = weather.forecast(city: city, days: days)
+        if (ahead.error != null) {
+            return degrees(city: city)
+        }
+        return "\${degrees(city: city)}, then \${ahead.value}"
+    }
 }`,
     },
 ];
 
-/** Contracts for the peer node. Visits keeps state between calls. */
+/** Contracts for the peer node. Visits keeps state between calls, which both its functions share. */
 export const PEER_CONTRACTS: ContractSpec[] = [
     {
         description: 'Counts how often each book is viewed.',
-        source: `contract org.archive.Visits(bookId: string): int32 {
-    var state(bookId) views: int32 = 0
+        source: `contract org.archive.Visits {
+    pub fn view(bookId: string): int32 {
+        var state(bookId) views: int32 = 0
+        views = views + 1
+        return views
+    }
 
-    views = views + 1
-    return views
+    pub fn count(bookId: string): int32 {
+        var state(bookId) views: int32 = 0
+        return views
+    }
 }`,
     },
 ];
@@ -202,18 +222,21 @@ export const SOURCE_EVENT_CONTRACTS: ContractSpec[] = [
     {
         description: 'Keeps the highest temperature read in each city.',
         source: `contract com.example.RecordHighs consumes com.example.TemperatureRead@2 {
-    var state(city) high: int32 = -273
-
-    if (degrees > high) {
-        high = degrees
+    fn on(city: string, degrees: int32) {
+        var state(city) high: int32 = -273
+        if (degrees > high) {
+            high = degrees
+        }
     }
 }`,
     },
     {
         description: 'Counts severe weather alerts per city.',
         source: `contract com.example.AlertLog consumes com.example.Alert {
-    var state(city) alerts: int32 = 0
-    alerts = alerts + 1
+    fn on(city: string) {
+        var state(city) alerts: int32 = 0
+        alerts = alerts + 1
+    }
 }`,
     },
 ];
@@ -228,9 +251,11 @@ export const PEER_EVENT_CONTRACTS: ContractSpec[] = [
     {
         description: 'Counts late returns per book.',
         source: `contract org.archive.LateReturns consumes org.archive.BookReturned {
-    var state(bookId) lateCount: int32 = 0
-    if (late) {
-        lateCount = lateCount + 1
+    fn on(bookId: string, late: boolean) {
+        var state(bookId) lateCount: int32 = 0
+        if (late) {
+            lateCount = lateCount + 1
+        }
     }
 }`,
     },

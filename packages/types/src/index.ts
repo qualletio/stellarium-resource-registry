@@ -106,11 +106,21 @@ export interface ContractParameter {
     type: string;
 }
 
+/** One of a contract's entrypoints: a `pub fn`, or an event contract's handler, `on`. */
+export interface ContractFunction {
+    name: string;
+    parameters: ContractParameter[];
+    /** A RequestScript type string, or `void` for a function that returns nothing. */
+    returnType: string;
+    /** Declared `pub payable fn`: a call to it may attach money. */
+    payable: boolean;
+}
+
 /** One deployed version of a contract, without its source. Versions are immutable on the node. */
 export interface ContractVersionSummary {
     version: string;
-    parameters: ContractParameter[];
-    returnType: string;
+    /** Its entrypoints, which callers call as `ref.name(...)`. An event contract's is its handler, `on`. */
+    functions: ContractFunction[];
     description: string | null;
     /** When the hosting node says the version was deployed. */
     deployedAt: string;
@@ -145,6 +155,8 @@ export interface ResourceFunction {
     /** Callers need a grant from the hosting node. */
     restricted: boolean;
     kind: FunctionKind;
+    /** A contract's `pub payable fn`: a call to it may attach money. */
+    payable: boolean;
 }
 
 export interface NodeInfo {
@@ -270,8 +282,8 @@ export interface EventTypeDetail {
 }
 
 /**
- * A contract that runs with each event of the type it consumes. It takes the event's fields as its parameters,
- * returns nothing, and isn't a resource: nobody can call it.
+ * A contract that runs with each event of the type it consumes. Its handler, `on`, takes the event's fields as
+ * its parameters and returns nothing, and it isn't a resource: nobody can call it.
  */
 export interface EventContractDetail {
     fqn: string;
@@ -287,7 +299,7 @@ export interface EventContractDetail {
         /** Whether the registry lists the event type, so it can be linked. */
         known: boolean;
     };
-    /** Its versions and source. Versions have no parameters and an empty return type. */
+    /** Its versions and source. Versions list no functions: the handler takes the event's fields. */
     contract: ContractInfo;
     host: NodeInfo | null;
     firstSeenAt: string;

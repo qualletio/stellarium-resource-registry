@@ -80,6 +80,7 @@ describe('SyncService against a real stellarium-ts node', () => {
                 paymentManifest: null,
                 restricted: true,
                 kind: 'fixed',
+                payable: false,
             },
             {
                 name: 'transfer',
@@ -93,8 +94,9 @@ describe('SyncService against a real stellarium-ts node', () => {
                 paymentManifest: { costMicroUsd: 5_000, recipientOrganizationId: SAMPLE_ORGANIZATION },
                 restricted: true,
                 kind: 'fixed',
+                payable: false,
             },
-            { name: 'rates', returnType: 'string', description: 'Current exchange rates as JSON.', parameters: [], paymentManifest: null, restricted: false, kind: 'fixed' },
+            { name: 'rates', returnType: 'string', description: 'Current exchange rates as JSON.', parameters: [], paymentManifest: null, restricted: false, kind: 'fixed', payable: false },
         ]);
         expect(detail).toMatchObject({
             website: 'https://ledger.example.com',
@@ -239,12 +241,14 @@ describe('SyncService against a real stellarium-ts node', () => {
 
         expect(await service.sync()).toMatchObject({ status: 'succeeded', resourcesSeen: 9 });
         const outlook = await repository.getResource('com.example.Outlook');
-        expect(outlook?.functions).toMatchObject([{
-            name: 'run',
-            kind: 'contract',
-            parameters: [{ name: 'city', type: 'string' }, { name: 'days', type: 'int32' }],
-            paymentManifest: { priceMicroUsdPerMillionTokens: SAMPLE_CONTRACT_PRICE, recipientOrganizationId: SAMPLE_ORGANIZATION },
-        }]);
+        // A function per pub fn of the latest version; the private one isn't listed.
+        const manifest = { priceMicroUsdPerMillionTokens: SAMPLE_CONTRACT_PRICE, recipientOrganizationId: SAMPLE_ORGANIZATION };
+        expect(outlook?.functions).toMatchObject([
+            { name: 'today', kind: 'contract', parameters: [{ name: 'city', type: 'string' }], returnType: 'string', paymentManifest: manifest, payable: false },
+            { name: 'forecast', kind: 'contract', parameters: [{ name: 'city', type: 'string' }, { name: 'days', type: 'int32' }], returnType: 'string', paymentManifest: manifest, payable: false },
+        ]);
+        // Each version keeps the functions it had.
+        expect(outlook?.contract?.versions.map((v) => v.functions.map((fn) => fn.name))).toEqual([['today', 'forecast'], ['today']]);
         expect(outlook?.contract).toMatchObject({ latestVersion: '2', source: SOURCE_CONTRACTS[1].source, ownerOrganizationId: null });
         expect(outlook?.contract?.versions.map((v) => [v.version, v.description])).toEqual([
             ['2', SOURCE_CONTRACTS[1].description],
@@ -268,6 +272,7 @@ describe('SyncService against a real stellarium-ts node', () => {
         await service.sync();
         const outlook = await repository.getResource('com.example.Outlook');
         expect(outlook?.contract?.versions.map((v) => v.version)).toEqual(['1']);
+        expect(outlook?.functions.map((fn) => fn.name)).toEqual(['today']);
         expect(outlook?.functions[0].parameters.map((p) => p.name)).toEqual(['city']);
 
         await node.deleteContract('com.example.Outlook');
@@ -301,7 +306,7 @@ describe('SyncService against a real stellarium-ts node', () => {
     it('only believes a contract\'s own host about its versions', async () => {
         const peer = await startNode({ resources: PEER_RESOURCES, contracts: PEER_CONTRACTS });
         nodes = [peer, await startNode({ resources: [weather], contracts: SOURCE_CONTRACTS, startingPeer: peer.baseUrl, port })];
-        const forged = { ...PEER_CONTRACTS[0], path: 'org.archive', name: 'Visits', version: '9', source: 'contract org.archive.Visits@9(bookId: string): int32 {\n  return 0\n}', parameters: [], returnType: 'int32', ownerOrganizationId: null, createdAt: new Date().toISOString() };
+        const forged = { ...PEER_CONTRACTS[0], path: 'org.archive', name: 'Visits', version: '9', source: 'contract org.archive.Visits@9 {\n  pub fn view(bookId: string): int32 {\n    return 0\n  }\n}', functions: [{ name: 'view', parameters: [{ name: 'bookId', type: 'string' }], returnType: 'int32', payable: false }], ownerOrganizationId: null, createdAt: new Date().toISOString() };
         // The source lists its own contract's versions, and claims a newer version of the peer's.
         service = new SyncService(db, {
             sourceUrl,
@@ -366,7 +371,7 @@ describe('SyncService against a real stellarium-ts node', () => {
                 baseUrl: peer.baseUrl,
                 description: PEER_EVENT_CONTRACTS[0].description,
                 consumes: { fqn: 'org.archive.BookReturned', version: '1', known: true },
-                contract: { latestVersion: '1', source: PEER_EVENT_CONTRACTS[0].source, versions: [{ version: '1', parameters: [], returnType: '' }] },
+                contract: { latestVersion: '1', source: PEER_EVENT_CONTRACTS[0].source, versions: [{ version: '1', functions: [] }] },
             });
             expect(await repository.getStats()).toMatchObject({ contracts: 2, eventTypes: 3, eventContracts: 3 });
             expect([...source.executed, ...peer.executed]).toEqual([]);

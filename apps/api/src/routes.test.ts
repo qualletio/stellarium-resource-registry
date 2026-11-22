@@ -46,13 +46,13 @@ describe('routes', () => {
                 { source: 'restricted event io.example.Audit(entry: string)' },
             ],
             contracts: [
-                { source: 'contract com.example.OnOrder consumes com.example.OrderPlaced@1.10 {\n  const seen = orderId\n}', description: 'Watches orders' },
-                { source: 'contract com.example.OnOrder@2 consumes com.example.OrderPlaced@1.10 {\n  const seen = currency\n}' },
-                { source: 'contract com.example.OnShipped consumes com.example.Shipped {\n  const where: com.example.Address@1.10 = to\n}' },
-                { source: 'contract com.example.Sum(a: int32, b: int32): int32 {\n  return a + b\n}', description: 'Adds two numbers' },
-                { source: 'contract com.example.Sum@1.10(a: int32, b: int32, c: int32): int32 {\n  return a + b + c\n}', description: 'Adds three numbers' },
+                { source: 'contract com.example.OnOrder consumes com.example.OrderPlaced@1.10 {\n  fn on(orderId: string) {\n    const seen = orderId\n  }\n}', description: 'Watches orders' },
+                { source: 'contract com.example.OnOrder@2 consumes com.example.OrderPlaced@1.10 {\n  fn on(currency: string) {\n    const seen = currency\n  }\n}' },
+                { source: 'contract com.example.OnShipped consumes com.example.Shipped {\n  fn on(to: com.example.Address@1.10) {\n    const where: com.example.Address@1.10 = to\n  }\n}' },
+                { source: 'contract com.example.Sum {\n  pub fn run(a: int32, b: int32): int32 {\n    return a + b\n  }\n}', description: 'Adds two numbers' },
+                { source: 'contract com.example.Sum@1.10 {\n  pub fn run(a: int32, b: int32, c: int32): int32 {\n    return a + b + c\n  }\n}', description: 'Adds three numbers' },
                 // Not the latest version, so it isn't counted as using Address.
-                { source: 'contract com.example.Sum@1.9(a: int32): int32 {\n  var unused: com.example.Address@1 = null\n  return a\n}' },
+                { source: 'contract com.example.Sum@1.9 {\n  pub fn run(a: int32): int32 {\n    var unused: com.example.Address@1 = null\n    return a\n  }\n}' },
             ],
         });
         const syncService = new SyncService(database.db, { sourceUrl: node.baseUrl, grantProbeIntervalMs: 60_000 });
@@ -125,6 +125,7 @@ describe('routes', () => {
             paymentManifest: { inputCostMicroUsdPerMillionTokens: 3_000_000, outputCostMicroUsdPerMillionTokens: 15_000_000, recipientOrganizationId: SAMPLE_ORGANIZATION },
             restricted: false,
             kind: 'inference',
+            payable: false,
         });
         expect(body.functions.map((fn: { kind: string }) => fn.kind)).toEqual(['inference', 'inference', 'fixed']);
     });
@@ -142,19 +143,19 @@ describe('routes', () => {
             paymentManifest: { priceMicroUsdPerMillionTokens: SAMPLE_CONTRACT_PRICE, recipientOrganizationId: SAMPLE_ORGANIZATION },
             restricted: false,
             kind: 'contract',
+            payable: false,
         }]);
         // 1.10 is newer than 1.9, which was deployed after it.
         expect(body.contract).toMatchObject({
             ownerOrganizationId: null,
             latestVersion: '1.10',
-            source: 'contract com.example.Sum@1.10(a: int32, b: int32, c: int32): int32 {\n  return a + b + c\n}',
+            source: 'contract com.example.Sum@1.10 {\n  pub fn run(a: int32, b: int32, c: int32): int32 {\n    return a + b + c\n  }\n}',
         });
         expect(body.contract.syncedAt).not.toBeNull();
         expect(body.contract.versions.map((v: { version: string }) => v.version)).toEqual(['1.10', '1.9', '1']);
         expect(body.contract.versions[2]).toEqual({
             version: '1',
-            parameters: [{ name: 'a', type: 'int32' }, { name: 'b', type: 'int32' }],
-            returnType: 'int32',
+            functions: [{ name: 'run', parameters: [{ name: 'a', type: 'int32' }, { name: 'b', type: 'int32' }], returnType: 'int32', payable: false }],
             description: 'Adds two numbers',
             deployedAt: expect.any(String),
         });
@@ -166,7 +167,7 @@ describe('routes', () => {
     it('returns one version of a contract with its source', async () => {
         const { status, body } = await get('/v1/resources/com.example.Sum/versions/1');
         expect(status).toBe(200);
-        expect(body).toMatchObject({ fqn: 'com.example.Sum', version: '1', source: 'contract com.example.Sum(a: int32, b: int32): int32 {\n  return a + b\n}' });
+        expect(body).toMatchObject({ fqn: 'com.example.Sum', version: '1', source: 'contract com.example.Sum {\n  pub fn run(a: int32, b: int32): int32 {\n    return a + b\n  }\n}' });
         expect((await get('/v1/resources/com.example.Sum/versions/3')).status).toBe(404);
         expect((await get('/v1/resources/com.example.Weather/versions/1')).status).toBe(404);
     });
@@ -185,7 +186,7 @@ describe('routes', () => {
         const { status, body } = await get('/v1/resources/io.example.Ledger');
         expect(status).toBe(200);
         expect(body).toMatchObject({ website: null, description: null });
-        expect(body.functions).toEqual([{ name: 'balance', returnType: 'int64', description: null, parameters: [], paymentManifest: null, restricted: true, kind: 'fixed' }]);
+        expect(body.functions).toEqual([{ name: 'balance', returnType: 'int64', description: null, parameters: [], paymentManifest: null, restricted: true, kind: 'fixed', payable: false }]);
         expect(body.host).toMatchObject({ acceptsGrantRequests: true, grantEndpoint: `${node.baseUrl}/v1/grants/request` });
         expect((await get('/v1/resources/com.example.Missing')).status).toBe(404);
     });
@@ -245,12 +246,12 @@ describe('routes', () => {
         expect(status).toBe(200);
         expect(body).toMatchObject({
             consumes: { fqn: 'com.example.OrderPlaced', version: '1.10', known: true },
-            contract: { latestVersion: '2', source: 'contract com.example.OnOrder@2 consumes com.example.OrderPlaced@1.10 {\n  const seen = currency\n}' },
+            contract: { latestVersion: '2', source: 'contract com.example.OnOrder@2 consumes com.example.OrderPlaced@1.10 {\n  fn on(currency: string) {\n    const seen = currency\n  }\n}' },
         });
         expect(body.contract.versions.map((v: { version: string; description: string | null }) => [v.version, v.description])).toEqual([['2', null], ['1', 'Watches orders']]);
 
         const version = await get('/v1/event-contracts/com.example.OnOrder/versions/1');
-        expect(version.body).toMatchObject({ fqn: 'com.example.OnOrder', version: '1', parameters: [], returnType: '', source: expect.stringContaining('const seen = orderId') });
+        expect(version.body).toMatchObject({ fqn: 'com.example.OnOrder', version: '1', functions: [], source: expect.stringContaining('const seen = orderId') });
         expect((await get('/v1/event-contracts/com.example.OnOrder/versions/3')).status).toBe(404);
         // An event contract isn't a resource, and a resource isn't an event contract.
         expect((await get('/v1/resources/com.example.OnOrder')).status).toBe(404);
