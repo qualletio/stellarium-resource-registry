@@ -32,7 +32,7 @@ describe('parseResource', () => {
             path: 'com.example',
             name: 'Weather',
             baseUrl: 'http://node.example',
-            functions: [{ name: 'temperature', returnType: 'int32', parameters: [{ name: 'city', type: 'string' }], paymentManifest: { costMicroUsd: 10, recipientOrganizationId: 'org_1' }, restricted: true, kind: 'fixed' }],
+            functions: [{ name: 'temperature', returnType: 'int32', parameters: [{ name: 'city', type: 'string' }], paymentManifest: { costMicroUsd: 10, recipientOrganizationId: 'org_1' }, restricted: true, kind: 'fixed', payable: false }],
         });
     });
 
@@ -46,7 +46,14 @@ describe('parseResource', () => {
     });
 
     it('accepts a contract priced per script token', () => {
-        expect(parseResource({ ...valid, functions: [run] })?.functions).toEqual([{ ...run, description: undefined, restricted: false }]);
+        expect(parseResource({ ...valid, functions: [run] })?.functions).toEqual([{ ...run, description: undefined, restricted: false, payable: false }]);
+    });
+
+    it('accepts a contract with a function per pub fn, and keeps which are payable', () => {
+        const tip = { ...run, name: 'tip', parameters: [], returnType: 'void', payable: true };
+        expect(parseResource({ ...valid, functions: [run, tip] })?.functions.map((fn) => [fn.name, fn.payable])).toEqual([['run', false], ['tip', true]]);
+        // Only a contract's functions can be payable.
+        expect(parseResource({ ...valid, functions: [{ ...valid.functions[0], payable: true }] })?.functions[0].payable).toBe(false);
     });
 
     it('keeps descriptions and an http(s) website, and treats null or empty ones as absent', () => {
@@ -86,8 +93,8 @@ describe('parseResource', () => {
         ['a missing token rate', { ...valid, functions: [{ ...complete, paymentManifest: { inputCostMicroUsdPerMillionTokens: 1, recipientOrganizationId: 'org_1' } }] }],
         ['a contract without a price', { ...valid, functions: [{ ...run, paymentManifest: undefined }] }],
         ['a contract with a per-call price', { ...valid, functions: [{ ...run, paymentManifest: { costMicroUsd: 10, recipientOrganizationId: 'org_1' } }] }],
-        ['a contract function not named run', { ...valid, functions: [{ ...run, name: 'call' }] }],
-        ['a contract alongside other functions', { ...valid, functions: [run, valid.functions[0]] }],
+        ['a contract alongside functions that aren\'t its own', { ...valid, functions: [run, valid.functions[0]] }],
+        ['a contract function with a non-boolean payable', { ...valid, functions: [{ ...run, payable: 'yes' }] }],
         ['a fixed function with a contract price', { ...valid, functions: [{ ...run, kind: undefined }] }],
         ['a non-string parameter description', { ...valid, functions: [{ ...valid.functions[0], parameters: [{ name: 'city', type: 'string', description: ['A city'] }] }] }],
     ])('rejects %s', (_, resource) => {
@@ -104,9 +111,8 @@ const contract = {
     path: 'com.example',
     name: 'Outlook',
     version: '1.2',
-    source: 'contract com.example.Outlook@1.2(city: string): string {\n  return city\n}',
-    parameters: [{ name: 'city', type: 'string' }],
-    returnType: 'string',
+    source: 'contract com.example.Outlook@1.2 {\n  pub fn today(city: string): string {\n    return city\n  }\n}',
+    functions: [{ name: 'today', parameters: [{ name: 'city', type: 'string' }], returnType: 'string', payable: false }],
     ownerOrganizationId: 'org_1',
     description: 'Today in words',
     createdAt: '2026-10-30T12:00:00.000Z',
@@ -118,8 +124,14 @@ describe('parseContract', () => {
         expect(parseContract({ ...contract, ownerOrganizationId: null, description: null })).toMatchObject({ ownerOrganizationId: null, description: undefined });
     });
 
-    it('accepts an event contract, which takes no parameters and returns nothing', () => {
-        expect(parseContract({ ...contract, parameters: [], returnType: '' })).toMatchObject({ parameters: [], returnType: '' });
+    it('accepts an event contract, whose one function is its handler', () => {
+        const on = { name: 'on', parameters: [{ name: 'city', type: 'string' }], returnType: 'void', payable: false };
+        expect(parseContract({ ...contract, functions: [on] })).toMatchObject({ functions: [on] });
+    });
+
+    it('reads payable as false unless it is true', () => {
+        expect(parseContract({ ...contract, functions: [{ ...contract.functions[0], payable: undefined }] })?.functions[0].payable).toBe(false);
+        expect(parseContract({ ...contract, functions: [{ ...contract.functions[0], payable: true }] })?.functions[0].payable).toBe(true);
     });
 
     it.each([
@@ -128,8 +140,10 @@ describe('parseContract', () => {
         ['a version with an empty segment', { ...contract, version: '1..2' }],
         ['an empty source', { ...contract, source: '' }],
         ['a source over the size limit', { ...contract, source: 'x'.repeat(MAX_CONTRACT_SOURCE_BYTES + 1) }],
-        ['a malformed parameter', { ...contract, parameters: [{ name: 'city' }] }],
-        ['a non-string return type', { ...contract, returnType: 7 }],
+        ['a version in RequestScript 1\'s shape', { ...contract, functions: undefined, parameters: [], returnType: 'string' }],
+        ['a malformed parameter', { ...contract, functions: [{ ...contract.functions[0], parameters: [{ name: 'city' }] }] }],
+        ['a non-string return type', { ...contract, functions: [{ ...contract.functions[0], returnType: 7 }] }],
+        ['a duplicate function', { ...contract, functions: [contract.functions[0], contract.functions[0]] }],
         ['a non-string owner', { ...contract, ownerOrganizationId: 7 }],
         ['an owner too long to store', { ...contract, ownerOrganizationId: 'o'.repeat(65) }],
         ['a non-string description', { ...contract, description: 42 }],

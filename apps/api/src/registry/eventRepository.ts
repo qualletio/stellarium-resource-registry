@@ -31,11 +31,10 @@ const toEventTypeVersion = (row: EventTypeVersionRow): EventTypeVersion => ({
     declaredAt: iso(row.declaredAt) as string,
 });
 
-/** An event contract version as a contract version: no parameters, and no return type. */
+/** An event contract version as a contract version: it lists no functions, since only its events run it. */
 const toContractVersionSummary = (row: EventContractVersionRow) => ({
     version: row.version,
-    parameters: [],
-    returnType: '',
+    functions: [],
     description: row.description,
     deployedAt: iso(row.deployedAt) as string,
 });

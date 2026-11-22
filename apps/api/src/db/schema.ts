@@ -52,6 +52,8 @@ export const resourceFunctionsTable = pgTable("resource_functions", {
   description: text(),
   restricted: boolean().notNull().default(false),
   kind: varchar({ length: 16, enum: FUNCTION_KINDS }).notNull().default('fixed'),
+  // A contract's `pub payable fn`, as its host announces it.
+  payable: boolean().notNull().default(false),
   // The function's paymentManifest. All null for a free function. A paid fixed function has a cost,
   // a paid inference function both rates, a contract its price per million script tokens.
   costMicroUsd: bigint("cost_micro_usd", { mode: 'number' }),
@@ -83,9 +85,8 @@ export const contractVersionsTable = pgTable("contract_versions", {
   resourceId: integer("resource_id").notNull().references(() => resourcesTable.id, { onDelete: 'cascade' }),
   version: varchar({ length: 64 }).notNull(),
   source: text().notNull(),
-  // `[{ name, type }]`, RequestScript type strings.
-  parameters: jsonb().$type<{ name: string; type: string }[]>().notNull(),
-  returnType: text("return_type").notNull(),
+  // Its entrypoints, `[{ name, parameters: [{ name, type }], returnType, payable }]`, with RequestScript type strings.
+  functions: jsonb().$type<{ name: string; parameters: { name: string; type: string }[]; returnType: string; payable: boolean }[]>().notNull(),
   ownerOrganizationId: varchar("owner_organization_id", { length: 64 }),
   description: text(),
   // `createdAt` as the host lists it.

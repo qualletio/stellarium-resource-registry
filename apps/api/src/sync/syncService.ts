@@ -211,6 +211,7 @@ export class SyncService {
             description: fn.description ?? null,
             restricted: fn.restricted,
             kind: fn.kind,
+            payable: fn.payable,
             ...manifestColumns(fn.paymentManifest),
             position,
         }))).returning({ id: resourceFunctionsTable.id, name: resourceFunctionsTable.name });
@@ -316,8 +317,7 @@ export class SyncService {
                             resourceId,
                             version: contract.version,
                             source: contract.source,
-                            parameters: contract.parameters,
-                            returnType: contract.returnType,
+                            functions: contract.functions,
                             ownerOrganizationId: contract.ownerOrganizationId,
                             description: contract.description ?? null,
                             deployedAt: contract.createdAt,

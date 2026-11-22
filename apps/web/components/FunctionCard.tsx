@@ -53,7 +53,7 @@ function PaymentNote({ manifest }: { manifest: PaymentManifest }) {
   if (isContractManifest(manifest)) {
     return (
       <p className={styles.note}>
-        Your node signs a contract voucher for the call, with this price and <code>maxAmount</code>, its{' '}
+        Your node signs a contract voucher for the call to this function, with this price and <code>maxAmount</code>, its{' '}
         <code>CONTRACT_COST_LIMIT_MICRO_USD</code>. The operator holds <code>maxAmount</code> on your organization's balance. The
         contract's own paid calls draw on that hold, and afterwards the host charges the script tokens the contract executed. What's
         left of the hold is released. A call that fails is still charged for its tokens.
@@ -106,6 +106,11 @@ export function FunctionCard({ path, name, fn, host }: Props) {
         <div className={styles.badges}>
           {fn.kind === 'inference' && <span className={styles.badgeInference}>inference</span>}
           {fn.kind === 'contract' && <span className={styles.badgeContract}>contract</span>}
+          {fn.payable && (
+            <span className={styles.badgePayable} title="A call may attach money: pub payable fn">
+              payable
+            </span>
+          )}
           <span className={fn.paymentManifest ? styles.badgePaid : styles.badgeFree}>{fn.paymentManifest ? 'paid' : 'free'}</span>
           <span className={fn.restricted ? styles.badgeRestricted : styles.badgeOpen}>{fn.restricted ? 'restricted' : 'open'}</span>
         </div>

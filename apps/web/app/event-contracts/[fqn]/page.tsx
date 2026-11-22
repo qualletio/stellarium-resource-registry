@@ -117,7 +117,7 @@ export default async function EventContractPage({ params, searchParams }: Props)
         runsLabel="events"
         intro={
           <>
-            A RequestScript script that runs with each event it consumes, reading the event&apos;s fields as its parameters. Events run
+            A RequestScript script that runs with each event it consumes: its handler, <code>fn on</code>, takes the event&apos;s fields as its parameters. Events run
             the latest version, and every version&apos;s source is public.
           </>
         }

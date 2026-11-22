@@ -30,6 +30,8 @@ export interface NodeFunction {
     paymentManifest?: NodePaymentManifest;
     restricted: boolean;
     kind: 'fixed' | 'inference' | 'contract';
+    /** A contract's `pub payable fn`. Only a contract's own host announces it. */
+    payable: boolean;
 }
 
 export interface NodeResource {
@@ -42,14 +44,23 @@ export interface NodeResource {
     functions: NodeFunction[];
 }
 
+/** One of a contract version's entrypoints, as its host lists it. */
+export interface NodeContractFunction {
+    name: string;
+    parameters: { name: string; type: string }[];
+    /** A RequestScript type string, or `void`. */
+    returnType: string;
+    payable: boolean;
+}
+
 /** One version of a contract, as its host's `GET /v1/contracts` lists it. */
 export interface NodeContract {
     path: string;
     name: string;
     version: string;
     source: string;
-    parameters: { name: string; type: string }[];
-    returnType: string;
+    /** Its `pub fn`s, or an event contract's handler, `on` (RequestScript 2.0). */
+    functions: NodeContractFunction[];
     ownerOrganizationId: string | null;
     description?: string;
     createdAt: Date;
@@ -125,9 +136,6 @@ const isNonnegativeSafeInteger = (value: unknown): value is number => Number.isS
 
 /** The parameter every inference function takes: the most output tokens a caller allows (`MAX_TOKENS_PARAMETER` in stellarium-ts). */
 const MAX_TOKENS_PARAMETER = 'maxTokens';
-
-/** The one function a contract's resource has (`CONTRACT_FUNCTION` in stellarium-ts). */
-export const CONTRACT_FUNCTION = 'run';
 
 /**
  * The largest contract source the registry stores. Nodes accept 64 KiB by default (`maxContractSourceBytes`),
@@ -231,8 +239,9 @@ function parseFunction(value: unknown): NodeFunction | undefined {
     }
     const paymentManifest = parsePaymentManifest(value.paymentManifest, kind);
     if (!paymentManifest.ok) return undefined;
-    // Nodes always price a contract, so every call needs a voucher.
-    if (kind === 'contract' && (value.name !== CONTRACT_FUNCTION || !paymentManifest.value)) return undefined;
+    // Nodes always price a contract's functions, so every call needs a voucher.
+    if (kind === 'contract' && !paymentManifest.value) return undefined;
+    if (value.payable !== undefined && value.payable !== null && typeof value.payable !== 'boolean') return undefined;
 
     return {
         name: value.name,
@@ -242,6 +251,8 @@ function parseFunction(value: unknown): NodeFunction | undefined {
         paymentManifest: paymentManifest.value,
         restricted: value.restricted === true,
         kind,
+        // Only a contract's functions can be payable.
+        payable: kind === 'contract' && value.payable === true,
     };
 }
 
@@ -262,14 +273,14 @@ export function parseResource(value: unknown): NodeResource | undefined {
         names.add(fn.name);
         functions.push(fn);
     }
-    // A contract's resource has its one function and nothing else.
-    if (functions.some((fn) => fn.kind === 'contract') && functions.length !== 1) return undefined;
+    // A contract's resource has a function for each of its `pub fn`s, and nothing else.
+    if (functions.some((fn) => fn.kind === 'contract') && !functions.every((fn) => fn.kind === 'contract')) return undefined;
     return { path: value.path, name: value.name, baseUrl, website: website.value, description: description.value, functions };
 }
 
-function parseContractParameters(value: unknown): NodeContract['parameters'] | undefined {
+function parseContractParameters(value: unknown): NodeContractFunction['parameters'] | undefined {
     if (!Array.isArray(value)) return undefined;
-    const parameters: NodeContract['parameters'] = [];
+    const parameters: NodeContractFunction['parameters'] = [];
     for (const parameter of value) {
         if (!isObject(parameter) || !isNonEmptyString(parameter.name) || !isNonEmptyString(parameter.type)) return undefined;
         parameters.push({ name: parameter.name, type: parameter.type });
@@ -277,13 +288,30 @@ function parseContractParameters(value: unknown): NodeContract['parameters'] | u
     return parameters;
 }
 
-/** `returnType` is empty for an event contract, which returns nothing. */
+/** More functions than any contract needs, so one node can't fill the database through one version. */
+export const MAX_CONTRACT_FUNCTIONS = 256;
+
+/** A version's entrypoints, each named once. Undefined when any is malformed. */
+function parseContractFunctions(value: unknown): NodeContractFunction[] | undefined {
+    if (!Array.isArray(value) || value.length > MAX_CONTRACT_FUNCTIONS) return undefined;
+    const functions: NodeContractFunction[] = [];
+    for (const fn of value) {
+        if (!isObject(fn) || !isNonEmptyString(fn.name) || !isNonEmptyString(fn.returnType)) return undefined;
+        if (functions.some((other) => other.name === fn.name)) return undefined;
+        const parameters = parseContractParameters(fn.parameters);
+        if (!parameters) return undefined;
+        functions.push({ name: fn.name, parameters, returnType: fn.returnType, payable: fn.payable === true });
+    }
+    return functions;
+}
+
+/** A contract version in RequestScript 2.0's shape: its entrypoints in `functions`. */
 export function parseContract(value: unknown): NodeContract | undefined {
-    if (!isObject(value) || !isNonEmptyString(value.path) || !isNonEmptyString(value.name) || typeof value.returnType !== 'string') return undefined;
+    if (!isObject(value) || !isNonEmptyString(value.path) || !isNonEmptyString(value.name)) return undefined;
     if (typeof value.version !== 'string' || !VERSION_PATTERN.test(value.version)) return undefined;
     if (typeof value.source !== 'string' || value.source.length === 0 || Buffer.byteLength(value.source) > MAX_CONTRACT_SOURCE_BYTES) return undefined;
-    const parameters = parseContractParameters(value.parameters);
-    if (!parameters) return undefined;
+    const functions = parseContractFunctions(value.functions);
+    if (!functions) return undefined;
     const owner = value.ownerOrganizationId;
     if (owner !== null && !(isNonEmptyString(owner) && owner.length <= MAX_ORGANIZATION_ID_LENGTH)) return undefined;
     const description = parseDescription(value.description);
@@ -295,8 +323,7 @@ export function parseContract(value: unknown): NodeContract | undefined {
         name: value.name,
         version: value.version,
         source: value.source,
-        parameters,
-        returnType: value.returnType,
+        functions,
         ownerOrganizationId: owner,
         description: description.value,
         createdAt,
